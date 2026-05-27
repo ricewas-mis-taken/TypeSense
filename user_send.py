@@ -38,15 +38,13 @@ def _queue(payload):
 
 def _flush_queue():
 	queue_dir = Path(__file__).parent/"queue"
-	print(f"[FLUSH] looking in: {queue_dir.absolute()}")
 	if not queue_dir.exists():
-		print("[FLUSH] no queue folder found")
 		return
 	all_files = list(queue_dir.glob("*.jsonl"))
 	if not all_files:
 		print("[FLUSH] queue is empty")
 		return
-	print(f"[FLush] found{len(all_files)}queue files")
+	print(f"[FLush] found {len(all_files)} queue files")
 
 	for queue_file in all_files:
 		lines = queue_file.read_text().strip().splitlines()

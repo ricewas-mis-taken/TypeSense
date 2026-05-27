@@ -195,9 +195,9 @@ user_send.start_retry_loop()
 
 def survey_scheduler():
 	show_survey(logger.session_id)
-	root.after(15000,survey_scheduler)
+	root.after(1200000,survey_scheduler)
 
-root.after(15000, survey_scheduler)
+root.after(1200000, survey_scheduler)
 def start_listener():
 	with Listener(on_press=logger.on_press, on_release=logger.on_release) as listener:
 		listener.join()

@@ -4,7 +4,7 @@ import time
 import user_send as sender
 
 
-SURVEY_INTERVAL_SEC = 15
+SURVEY_INTERVAL_SEC = 1200
 
 def show_survey(session_id: str):
 	result = {}
