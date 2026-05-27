@@ -2,10 +2,6 @@
 
 ### Passive Desktop Typing Dynamics for Real-Time Mood and Cognitive State Prediction
 
-!\[Python](https://img.shields.io/badge/Python-3.10+-blue)
-!\[License](https://img.shields.io/badge/License-MIT-green)
-!\[Status](https://img.shields.io/badge/Status-V1%20Complete-brightgreen)
-!\[Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Mac-lightgrey)
 
 \---
 
