@@ -1,0 +1,12 @@
+data/
+surveys/
+queue/
+simple_data/
+training/
+*.csv
+*.jsonl
+.venv/
+__pycache__/
+*.pyc
+*.exe
+offline_queue.jsonl
