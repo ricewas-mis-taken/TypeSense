@@ -15,5 +15,6 @@ data_comp.py
 temp_test.py
 test.py
 .idea/
+config.json
 
 

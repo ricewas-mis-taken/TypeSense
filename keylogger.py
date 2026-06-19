@@ -6,6 +6,9 @@ import tkinter as tk
 from survey import show_survey
 import threading
 import os
+from tkinter import messagebox
+import pystray
+from PIL import Image, ImageDraw
 
 
 
@@ -92,6 +95,7 @@ class Simplekeylog:
 		return burst_lens
 
 	def _write_window_row(self, now):
+
 		avg_d, min_d, max_d = self._jarvis(self.all_dwell)
 		avg_f, min_f, max_f = self._jarvis(self.all_flight)
 		burst_lens = self._compute_burst()
@@ -118,7 +122,7 @@ class Simplekeylog:
 
 		self._ff.writerow(list(row.values()))
 		self._ff_file.flush()
-		user_send.send(row)
+		threading.Thread(target=user_send.send, args=(row,), daemon=True).start()
 
 
 
@@ -138,7 +142,8 @@ class Simplekeylog:
 		self.events.append(("press", now, cat))
 		self._kw.writerow([self.session_id, now, "press", cat, ""])
 
-		self._kf.flush()
+		if self.total_press % 10 == 0:
+			self._kf.flush()
 		self.total_press += 1
 		self.window_press += 1
 		self.flush_windows()
@@ -155,7 +160,8 @@ class Simplekeylog:
 		self.all_dwell.append(dwell_ns)
 
 		self._kw.writerow([self.session_id, now, "release", cat, dwell_ns])
-		self._kf.flush()
+		if self.total_press % 10 == 0:
+			self._kf.flush()
 		self.window_release += 1
 		if key == Key.esc:
 			print("Esc detected - Shutting Down")
@@ -183,19 +189,57 @@ class Simplekeylog:
 		self.window_start_ns = now
 		print("Windows reset")
 
+#icon to close program
+
+def tray_icon():
+	img = Image.new("RGB",(64,64),color=(0,0,0))
+	draw = ImageDraw.Draw(img)
+	draw.ellipse([8,8,56,56],fill = (45,125,70))
+
+	def quit_app(icon,item):
+		icon.stop()
+		os._exit(0)
+	def show_survey_now(icon,item):
+		root.after(0,lambda:show_survey(logger.session_id))
+
+	menu = pystray.Menu(
+		pystray.MenuItem("Show Survey Now", show_survey_now),
+		pystray.MenuItem("Quit Logger", quit_app)
+	)
+	icon = pystray.Icon(
+		"KeystrokeLogger", img,
+		"KeystrokeLogger - Running",
+		menu
+	)
+	return icon
 
 root = tk.Tk()
 root.withdraw()
+root.attributes("-alpha", 0)
 
 logger = Simplekeylog(window_sec = 15)
 
 #offline to online ping
 user_send.init_queue(logger.session_id)
+user_send._flush_queue()
 user_send.start_retry_loop()
+
+tray_icon = tray_icon()
+threading.Thread(target=tray_icon.run, daemon=True).start()
 
 def survey_scheduler():
 	show_survey(logger.session_id)
 	root.after(1200000,survey_scheduler)
+#for recording name
+def show_session_id():
+
+   root.deiconify()
+   root.focus_force()
+   messagebox.showinfo(
+        "Your Participant ID",
+        f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
+
+root.after(1000, show_session_id)
 
 root.after(1200000, survey_scheduler)
 def start_listener():
