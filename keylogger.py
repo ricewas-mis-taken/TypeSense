@@ -220,11 +220,11 @@ def tray_icon():
 
 	menu = pystray.Menu(
 		pystray.MenuItem("Show Survey Now", show_survey_now),
-		pystray.MenuItem("Quit Logger", quit_app)
+		pystray.MenuItem("Quit", quit_app)
 	)
 	icon = pystray.Icon(
-		"KeystrokeLogger", img,
-		"KeystrokeLogger - Running",
+		"TypeSense", img,
+		"TypeSense - Running",
 		menu
 	)
 	return icon
@@ -246,22 +246,12 @@ threading.Thread(target=tray_icon.run, daemon=True).start()
 def survey_scheduler():
 	show_survey(logger.session_id)
 	root.after(1200000,survey_scheduler)
-#for recording name
-def show_session_id():
-
-   root.deiconify()
-   root.focus_force()
-   messagebox.showinfo(
-        "Your Participant ID",
-        f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
-
-root.after(1000, show_session_id)
 
 root.after(1200000, survey_scheduler)
 def start_listener():
 	with Listener(on_press=logger.on_press, on_release=logger.on_release) as listener:
 		listener.join()
 threading.Thread(target=start_listener, daemon=True).start()
-print("[Logger] Running. Survey every 20m. ESC to stop.")
+print("[TypeSense] Running. Survey every 20m. ESC to stop.")
 root.mainloop()
 
