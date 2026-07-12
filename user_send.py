@@ -13,11 +13,10 @@ _config_path = BASE_DIR / "config.json"
 if _config_path.exists():
     _cfg = json.loads(_config_path.read_text())
     SERVER_URL = _cfg["server_url"]
+    SECRET_TOKEN = _cfg["secret_token"]
 else:
     SERVER_URL = "http://localhost:5000/data"
-
-SECRET_TOKEN = "we-like-video-editing"
-
+    SECRET_TOKEN = "changeme"
 
 QUEUE_FILE = BASE_DIR/"queue"/"offline_queue.jsonl"
 QUEUE_FILE.parent.mkdir(exist_ok=True)
@@ -26,27 +25,32 @@ QUEUE_FILE.parent.mkdir(exist_ok=True)
 def _retry_loop():
     while True:
         time.sleep(30)
-        print("rtry loop running, queue finish")
+        print("retry loop running, queue flush")
         try:
             _flush_queue()
         except Exception as e:
             print(f"retry error:{e}")
+
+
 def start_retry_loop():
-    threading.Thread(target=_retry_loop, daemon = True).start()
+    threading.Thread(target=_retry_loop, daemon=True).start()
+
 
 def send(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
     try:
         _flush_queue()
-        r = requests.post(SERVER_URL, json=payload, timeout = 5)
+        r = requests.post(SERVER_URL, json=payload, timeout=5)
         if r.status_code != 200:
             _queue(payload)
     except requests.exceptions.RequestException:
         _queue(payload)
 
+
 def _queue(payload):
     with open(QUEUE_FILE, "a") as f:
         f.write(json.dumps(payload) + "\n")
+
 
 def _flush_queue():
     queue_dir = BASE_DIR/"queue"
@@ -56,23 +60,23 @@ def _flush_queue():
     if not all_files:
         print("[FLUSH] queue is empty")
         return
-    print(f"[FLush] found {len(all_files)} queue files")
+    print(f"[FLUSH] found {len(all_files)} queue files")
 
     for queue_file in all_files:
         lines = queue_file.read_text().strip().splitlines()
         if not lines:
             continue
-        print(f"[Flush] sending {len(lines)}items from {queue_file.name}")
+        print(f"[FLUSH] sending {len(lines)} items from {queue_file.name}")
         sent = []
         for line in lines:
             try:
                 payload = json.loads(line)
-                data = payload.get("data",{})
-                if "stress"in data:
-                    url = SERVER_URL.replace("/data","/survey")
+                data = payload.get("data", {})
+                if "stress" in data:
+                    url = SERVER_URL.replace("/data", "/survey")
                 else:
                     url = SERVER_URL
-                r  = requests.post(url, json=payload,timeout=5)
+                r = requests.post(url, json=payload, timeout=5)
                 print(f"[FLUSH] response: {r.status_code}")
                 if r.status_code == 200:
                     sent.append(line)
@@ -84,21 +88,22 @@ def _flush_queue():
         if not remaining:
             queue_file.unlink()
             print(f"[FLUSH] {queue_file.name} cleared and deleted")
-        else:print(f"[FLUSH] {queue_file.name} items remaining")
+        else:
+            print(f"[FLUSH] {queue_file.name} items remaining")
 
 
 def send_survey(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
     try:
-        r= requests.post(SERVER_URL.replace("/data", "/survey"),json=payload, timeout = 5)
+        r = requests.post(SERVER_URL.replace("/data", "/survey"), json=payload, timeout=5)
         if r.status_code != 200:
             _queue(payload)
     except requests.exceptions.RequestException:
         _queue(payload)
+
 
 def init_queue(session_id: str):
     global QUEUE_FILE
     queue_dir = BASE_DIR/"queue"
     queue_dir.mkdir(exist_ok=True)
     QUEUE_FILE = queue_dir/f"queue_{session_id}.jsonl"
-

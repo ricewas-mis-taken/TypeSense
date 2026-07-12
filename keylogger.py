@@ -6,23 +6,34 @@ import tkinter as tk
 from survey import show_survey
 import threading
 import os
+import sys
+import winreg
 from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
-import winreg, sys
-import socket
 
 
+def ensure_autostart():
+	if not getattr(sys, "frozen", False):
+		return
+	exe_path = sys.executable
+	run_key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+	try:
+		key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key, 0, winreg.KEY_ALL_ACCESS)
+	except FileNotFoundError:
+		key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, run_key)
 
-def add_to_startup():
-    exe_path = sys.executable if getattr(sys, 'frozen', False) else __file__
-    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                         r"Software\Microsoft\Windows\CurrentVersion\Run",
-                         0, winreg.KEY_SET_VALUE)
-    winreg.SetValueEx(key, "KeystrokeLogger", 0, winreg.REG_SZ, exe_path)
-    winreg.CloseKey(key)
+	try:
+		existing, _ = winreg.QueryValueEx(key, "TypeSenseLogger")
+	except FileNotFoundError:
+		existing = None
 
-add_to_startup()
+	desired = f'"{exe_path}"'
+	if existing != desired:
+		winreg.SetValueEx(key, "TypeSenseLogger", 0, winreg.REG_SZ, desired)
+	winreg.CloseKey(key)
+
+
 
 
 def categorize(key):
@@ -30,7 +41,7 @@ def categorize(key):
 		char = key.char
 		if char and char.isalpha(): return 0
 		if char and char.isdigit(): return 1
-		return 12 #for  punctuation
+		return 12
 	except AttributeError:
 		if key == Key.space: return 2
 		elif key == Key.backspace: return 3
@@ -41,14 +52,13 @@ def categorize(key):
 		elif key in (Key.up, Key.down, Key.left, Key.right): return 8
 		elif str(key).startswith("Key.f"): return 9
 		elif key == Key.esc: return 10
-		return 11 #other stuff
+		return 11
+
+MIN_KEYSTROKES_PER_WINDOW = 8
 
 class Simplekeylog:
 	def __init__(self, out_dir = "simple_data", window_sec = 15):
-		#for getting host name
-		self.hostname = socket.gethostname()
-		#session id
-		self.session_id = str(uuid.uuid4())[:8]
+		self.session_id = self._load_or_create_session_id()
 		self.out_dir = Path(out_dir)
 		self.out_dir.mkdir(exist_ok=True)
 
@@ -81,7 +91,15 @@ class Simplekeylog:
 		self.window_press = 0
 		self.window_release = 0
 
-	#helper for computing data
+	def _load_or_create_session_id(self):
+		id_file = Path("participant_id.txt")
+		if id_file.exists():
+			existing = id_file.read_text().strip()
+			if existing:
+				return existing
+		new_id = str(uuid.uuid4())[:8]
+		id_file.write_text(new_id)
+		return new_id
 
 	def _jarvis(self, values):
 		valid = [v for v in values if 10_000_000<v<300_000_000]
@@ -121,7 +139,6 @@ class Simplekeylog:
 
 		row = {
 			"session": self.session_id,
-			"hostname": self.hostname,
 			"time_now": now,
 			"total_press": self.total_press,
 			"total_release": self.total_release,
@@ -146,7 +163,6 @@ class Simplekeylog:
 		now = time.perf_counter_ns()
 		cat = categorize(key)
 		self._press_times[cat] = now
-		#only track actual keys
 		flight_void = {5,6,7,8,9}
 		if self._last_press_ns is not None and cat not in flight_void:
 			self.all_flight.append(now - self._last_press_ns)
@@ -195,17 +211,19 @@ class Simplekeylog:
 		now = time.perf_counter_ns()
 		if now - self.window_start_ns < self.window_sec *1_000_000_000:
 			return
-		self.window_press=0
+
+		if len(self.all_dwell) < MIN_KEYSTROKES_PER_WINDOW:
+			print(f"Window skipped - only {len(self.all_dwell)} keystrokes")
+		else:
+			self._write_window_row(now)
+
+		self.window_press = 0
 		self.window_release = 0
-		self._write_window_row(now)
 		self._kf.flush()
 		self.events.clear()
 		self.all_dwell.clear()
 		self.all_flight.clear()
 		self.window_start_ns = now
-		print("Windows reset")
-
-#icon to close program
 
 def tray_icon():
 	img = Image.new("RGB",(64,64),color=(0,0,0))
@@ -220,10 +238,10 @@ def tray_icon():
 
 	menu = pystray.Menu(
 		pystray.MenuItem("Show Survey Now", show_survey_now),
-		pystray.MenuItem("Quit", quit_app)
+		pystray.MenuItem("Quit Logger", quit_app)
 	)
 	icon = pystray.Icon(
-		"TypeSense", img,
+		"TypeSenseLogger", img,
 		"TypeSense - Running",
 		menu
 	)
@@ -233,9 +251,10 @@ root = tk.Tk()
 root.withdraw()
 root.attributes("-alpha", 0)
 
+ensure_autostart()
+
 logger = Simplekeylog(window_sec = 15)
 
-#offline to online ping
 user_send.init_queue(logger.session_id)
 user_send._flush_queue()
 user_send.start_retry_loop()
@@ -247,11 +266,19 @@ def survey_scheduler():
 	show_survey(logger.session_id)
 	root.after(1200000,survey_scheduler)
 
+def show_session_id():
+   root.deiconify()
+   root.focus_force()
+   messagebox.showinfo(
+        "Your Participant ID",
+        f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
+
+root.after(1000, show_session_id)
+
 root.after(1200000, survey_scheduler)
 def start_listener():
 	with Listener(on_press=logger.on_press, on_release=logger.on_release) as listener:
 		listener.join()
 threading.Thread(target=start_listener, daemon=True).start()
-print("[TypeSense] Running. Survey every 20m. ESC to stop.")
+print("[Logger] Running. Survey every 20m. ESC to stop.")
 root.mainloop()
-
