@@ -4,12 +4,14 @@ from pathlib import Path
 import threading
 import time
 import sys
+from app_paths import get_app_data_dir
 
 if getattr(sys, "frozen", False):
-    BASE_DIR = Path(sys.executable).parent
+    CONFIG_DIR = Path(sys.executable).parent
 else:
-    BASE_DIR = Path(__file__).parent
-_config_path = BASE_DIR / "config.json"
+    CONFIG_DIR = Path(__file__).parent
+BASE_DIR = get_app_data_dir()
+_config_path = CONFIG_DIR / "config.json"
 if _config_path.exists():
     _cfg = json.loads(_config_path.read_text())
     SERVER_URL = _cfg["server_url"]

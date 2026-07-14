@@ -11,6 +11,7 @@ import winreg
 from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
+from app_paths import get_app_data_dir
 
 
 def ensure_autostart():
@@ -57,10 +58,10 @@ def categorize(key):
 MIN_KEYSTROKES_PER_WINDOW = 8
 
 class Simplekeylog:
-	def __init__(self, out_dir = "simple_data", window_sec = 15):
+	def __init__(self, out_dir = None, window_sec = 15):
 		self.session_id = self._load_or_create_session_id()
-		self.out_dir = Path(out_dir)
-		self.out_dir.mkdir(exist_ok=True)
+		self.out_dir = Path(out_dir) if out_dir else (get_app_data_dir() / "simple_data")
+		self.out_dir.mkdir(parents=True, exist_ok=True)
 
 		self.log_file = self.out_dir / f"keyrecsimp_{self.session_id}.csv"
 		self.window_file = self.out_dir / f"importantsimp_{self.session_id}.csv"
@@ -92,13 +93,15 @@ class Simplekeylog:
 		self.window_release = 0
 
 	def _load_or_create_session_id(self):
-		id_file = Path("participant_id.txt")
+		id_file = get_app_data_dir() / "participant_id.txt"
 		if id_file.exists():
 			existing = id_file.read_text().strip()
 			if existing:
+				self.is_first_run = False
 				return existing
 		new_id = str(uuid.uuid4())[:8]
 		id_file.write_text(new_id)
+		self.is_first_run = True
 		return new_id
 
 	def _jarvis(self, values):
@@ -192,7 +195,7 @@ class Simplekeylog:
 		self.all_dwell.append(dwell_ns)
 
 		self._kw.writerow([self.session_id, now, "release", cat, dwell_ns])
-		if self.total_press % 10 == 0:
+		if self.total_release % 10 == 0:
 			self._kf.flush()
 		self.window_release += 1
 		if key == Key.esc:
@@ -235,8 +238,11 @@ def tray_icon():
 		os._exit(0)
 	def show_survey_now(icon,item):
 		root.after(0,lambda:show_survey(logger.session_id))
+	def show_id_now(icon,item):
+		root.after(0, show_session_id)
 
 	menu = pystray.Menu(
+		pystray.MenuItem("Show ID", show_id_now),
 		pystray.MenuItem("Show Survey Now", show_survey_now),
 		pystray.MenuItem("Quit Logger", quit_app)
 	)
@@ -250,14 +256,22 @@ def tray_icon():
 root = tk.Tk()
 root.withdraw()
 root.attributes("-alpha", 0)
+root.attributes("-toolwindow", True)
 
-ensure_autostart()
+try:
+	ensure_autostart()
+	logger = Simplekeylog(window_sec = 15)
 
-logger = Simplekeylog(window_sec = 15)
-
-user_send.init_queue(logger.session_id)
-user_send._flush_queue()
-user_send.start_retry_loop()
+	user_send.init_queue(logger.session_id)
+	user_send._flush_queue()
+	user_send.start_retry_loop()
+except Exception as e:
+	error_log = get_app_data_dir() / "startup_error.log"
+	error_log.write_text(f"{time.ctime()}: {e!r}\n", encoding="utf-8")
+	messagebox.showerror(
+		"TypeSense failed to start",
+		f"TypeSense could not start:\n\n{e}\n\nDetails saved to:\n{error_log}")
+	os._exit(1)
 
 tray_icon = tray_icon()
 threading.Thread(target=tray_icon.run, daemon=True).start()
@@ -267,13 +281,14 @@ def survey_scheduler():
 	root.after(1200000,survey_scheduler)
 
 def show_session_id():
-   root.deiconify()
-   root.focus_force()
-   messagebox.showinfo(
-        "Your Participant ID",
-        f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
+	root.deiconify()
+	root.focus_force()
+	messagebox.showinfo(
+		"Your Participant ID",
+		f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
 
-root.after(1000, show_session_id)
+if logger.is_first_run:
+	root.after(1000, show_session_id)
 
 root.after(1200000, survey_scheduler)
 def start_listener():
