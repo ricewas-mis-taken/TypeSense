@@ -17,11 +17,18 @@ if _config_path.exists():
     SERVER_URL = _cfg["server_url"]
     SECRET_TOKEN = _cfg["secret_token"]
 else:
-    SERVER_URL = "http://localhost:5000/data"
-    SECRET_TOKEN = "changeme"
+    SERVER_URL = None
+    SECRET_TOKEN = None
 
 QUEUE_FILE = BASE_DIR/"queue"/"offline_queue.jsonl"
 QUEUE_FILE.parent.mkdir(exist_ok=True)
+
+_queue_lock = threading.Lock()
+
+
+def _require_config():
+    if SERVER_URL is None:
+        raise RuntimeError(f"Missing config.json at {_config_path} — cannot determine server_url/secret_token")
 
 
 def _retry_loop():
@@ -50,48 +57,52 @@ def send(data: dict):
 
 
 def _queue(payload):
-    with open(QUEUE_FILE, "a") as f:
-        f.write(json.dumps(payload) + "\n")
+    with _queue_lock:
+        with open(QUEUE_FILE, "a") as f:
+            f.write(json.dumps(payload) + "\n")
 
 
 def _flush_queue():
-    queue_dir = BASE_DIR/"queue"
-    if not queue_dir.exists():
-        return
-    all_files = list(queue_dir.glob("*.jsonl"))
-    if not all_files:
-        print("[FLUSH] queue is empty")
-        return
-    print(f"[FLUSH] found {len(all_files)} queue files")
+    with _queue_lock:
+        queue_dir = BASE_DIR/"queue"
+        if not queue_dir.exists():
+            return
+        all_files = list(queue_dir.glob("*.jsonl"))
+        if not all_files:
+            print("[FLUSH] queue is empty")
+            return
+        print(f"[FLUSH] found {len(all_files)} queue files")
 
-    for queue_file in all_files:
-        lines = queue_file.read_text().strip().splitlines()
-        if not lines:
-            continue
-        print(f"[FLUSH] sending {len(lines)} items from {queue_file.name}")
-        sent = []
-        for line in lines:
-            try:
-                payload = json.loads(line)
-                data = payload.get("data", {})
-                if "stress" in data:
-                    url = SERVER_URL.replace("/data", "/survey")
-                else:
-                    url = SERVER_URL
-                r = requests.post(url, json=payload, timeout=5)
-                print(f"[FLUSH] response: {r.status_code}")
-                if r.status_code == 200:
-                    sent.append(line)
-            except Exception as e:
-                print(f"[FLUSH] error:{e}")
-                break
-        remaining = [l for l in lines if l not in sent]
-        queue_file.write_text("\n".join(remaining))
-        if not remaining:
-            queue_file.unlink()
-            print(f"[FLUSH] {queue_file.name} cleared and deleted")
-        else:
-            print(f"[FLUSH] {queue_file.name} items remaining")
+        for queue_file in all_files:
+            lines = queue_file.read_text().strip().splitlines()
+            if not lines:
+                continue
+            print(f"[FLUSH] sending {len(lines)} items from {queue_file.name}")
+            sent = []
+            for line in lines:
+                try:
+                    payload = json.loads(line)
+                    data = payload.get("data", {})
+                    if "stress" in data:
+                        url = SERVER_URL.replace("/data", "/survey")
+                    else:
+                        url = SERVER_URL
+                    r = requests.post(url, json=payload, timeout=5)
+                    print(f"[FLUSH] response: {r.status_code}")
+                    if r.status_code == 200:
+                        sent.append(line)
+                except Exception as e:
+                    print(f"[FLUSH] error:{e}")
+                    break
+            remaining = [l for l in lines if l not in sent]
+            tmp_file = queue_file.with_suffix(".tmp")
+            tmp_file.write_text("\n".join(remaining))
+            tmp_file.replace(queue_file)
+            if not remaining:
+                queue_file.unlink()
+                print(f"[FLUSH] {queue_file.name} cleared and deleted")
+            else:
+                print(f"[FLUSH] {queue_file.name} items remaining")
 
 
 def send_survey(data: dict):
@@ -106,6 +117,7 @@ def send_survey(data: dict):
 
 def init_queue(session_id: str):
     global QUEUE_FILE
+    _require_config()
     queue_dir = BASE_DIR/"queue"
     queue_dir.mkdir(exist_ok=True)
     QUEUE_FILE = queue_dir/f"queue_{session_id}.jsonl"

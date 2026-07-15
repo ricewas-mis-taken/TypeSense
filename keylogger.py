@@ -66,15 +66,20 @@ class Simplekeylog:
 		self.log_file = self.out_dir / f"keyrecsimp_{self.session_id}.csv"
 		self.window_file = self.out_dir / f"importantsimp_{self.session_id}.csv"
 
-		self._kf = open(self.log_file, "w", newline='', encoding="utf-8")
-		self._ff_file = open(self.window_file, "w", newline='', encoding="utf-8")
+		kf_is_new = not self.log_file.exists()
+		ff_is_new = not self.window_file.exists()
+
+		self._kf = open(self.log_file, "a", newline='', encoding="utf-8")
+		self._ff_file = open(self.window_file, "a", newline='', encoding="utf-8")
 
 		self._ff = csv.writer(self._ff_file)
 		self._kw = csv.writer(self._kf)
 
-		self._kw.writerow(["session","ts_ns","event", "cat", "dwell time"])
-		self._ff.writerow(["session","time now", "total press", "total release", "avg_dwell", "shortest dwell", "longest dwell",
-						   "avg_flight", "shortest flight", "longest flight", "avg_burst","max_burst","num_bursts"])
+		if kf_is_new:
+			self._kw.writerow(["session","ts_ns","event", "cat", "dwell time"])
+		if ff_is_new:
+			self._ff.writerow(["session","time now", "total press", "total release", "avg_dwell", "shortest dwell", "longest dwell",
+							   "avg_flight", "shortest flight", "longest flight", "avg_burst","max_burst","num_bursts"])
 
 		self.events = []
 		self.all_dwell = []
@@ -163,9 +168,15 @@ class Simplekeylog:
 
 
 	def on_press(self, key):
+		try:
+			self._on_press(key)
+		except Exception as e:
+			print(f"[on_press] error: {e!r}")
+
+	def _on_press(self, key):
 		now = time.perf_counter_ns()
 		cat = categorize(key)
-		self._press_times[cat] = now
+		self._press_times[key] = now
 		flight_void = {5,6,7,8,9}
 		if self._last_press_ns is not None and cat not in flight_void:
 			self.all_flight.append(now - self._last_press_ns)
@@ -185,12 +196,18 @@ class Simplekeylog:
 
 
 	def on_release(self, key):
+		try:
+			self._on_release(key)
+		except Exception as e:
+			print(f"[on_release] error: {e!r}")
+
+	def _on_release(self, key):
 		now = time.perf_counter_ns()
 		cat = categorize(key)
 		self.events.append(("release", now, cat))
 		self.total_release += 1
 
-		press_time = self._press_times.pop(cat, None)
+		press_time = self._press_times.pop(key, None)
 		dwell_ns = now - press_time if press_time is not None else -1
 		self.all_dwell.append(dwell_ns)
 
@@ -200,15 +217,17 @@ class Simplekeylog:
 		self.window_release += 1
 		if key == Key.esc:
 			print("Esc detected - Shutting Down")
-			try:
-				self._kf.close()
-				self._ff_file.close()
-			except:
-				pass
-
+			self.shutdown()
 			os._exit(0)
 
 		self.flush_windows()
+
+	def shutdown(self):
+		try:
+			self._kf.close()
+			self._ff_file.close()
+		except Exception:
+			pass
 
 	def flush_windows(self):
 		now = time.perf_counter_ns()
@@ -235,6 +254,7 @@ def tray_icon():
 
 	def quit_app(icon,item):
 		icon.stop()
+		logger.shutdown()
 		os._exit(0)
 	def show_survey_now(icon,item):
 		root.after(0,lambda:show_survey(logger.session_id))
@@ -292,8 +312,14 @@ if logger.is_first_run:
 
 root.after(1200000, survey_scheduler)
 def start_listener():
-	with Listener(on_press=logger.on_press, on_release=logger.on_release) as listener:
-		listener.join()
+	while True:
+		try:
+			with Listener(on_press=logger.on_press, on_release=logger.on_release) as listener:
+				listener.join()
+		except Exception as e:
+			print(f"[Listener] crashed: {e!r}, restarting")
+			continue
+		break
 threading.Thread(target=start_listener, daemon=True).start()
 print("[Logger] Running. Survey every 20m. ESC to stop.")
 root.mainloop()
