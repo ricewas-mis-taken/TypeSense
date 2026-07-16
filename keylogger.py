@@ -8,10 +8,24 @@ import threading
 import os
 import sys
 import winreg
+import ctypes
 from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
+
+
+def ensure_single_instance():
+	mutex_name = "Global\\TypeSenseLogger_SingleInstance_Mutex"
+	mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+	last_error = ctypes.windll.kernel32.GetLastError()
+	ERROR_ALREADY_EXISTS = 183
+	if last_error == ERROR_ALREADY_EXISTS:
+		os._exit(0)
+	return mutex
+
+
+_single_instance_mutex = ensure_single_instance()
 
 
 def ensure_autostart():
