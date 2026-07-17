@@ -9,24 +9,50 @@ import os
 import sys
 import winreg
 import ctypes
+import subprocess
 from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
 
 
-def ensure_single_instance():
+WATCHDOG_ARG = "--watchdog"
+WATCHDOG_RESTART_DELAY_SEC = 20 * 60
+
+
+def _create_mutex(name):
 	kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-	mutex_name = "Global\\TypeSenseLogger_SingleInstance_Mutex"
-	mutex = kernel32.CreateMutexW(None, False, mutex_name)
-	last_error = ctypes.get_last_error()
-	ERROR_ALREADY_EXISTS = 183
-	if last_error == ERROR_ALREADY_EXISTS:
+	mutex = kernel32.CreateMutexW(None, False, name)
+	if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
 		os._exit(0)
 	return mutex
 
 
-_single_instance_mutex = ensure_single_instance()
+def _child_command():
+	if getattr(sys, "frozen", False):
+		return [sys.executable]
+	return [sys.executable, os.path.abspath(__file__)]
+
+
+def run_watchdog():
+	"""Supervises the logger process. If it ever closes - crash, accidental
+	close, or a deliberate quit - relaunch it after a cooldown so logging
+	resumes on its own instead of staying off indefinitely."""
+	_watchdog_mutex = _create_mutex("Global\\TypeSenseLogger_Watchdog_Mutex")
+	while True:
+		try:
+			subprocess.Popen(_child_command()).wait()
+		except Exception:
+			pass
+		time.sleep(WATCHDOG_RESTART_DELAY_SEC)
+
+
+if WATCHDOG_ARG in sys.argv:
+	run_watchdog()
+	sys.exit(0)
+
+
+_single_instance_mutex = _create_mutex("Global\\TypeSenseLogger_SingleInstance_Mutex")
 
 
 def ensure_autostart():
@@ -44,7 +70,7 @@ def ensure_autostart():
 	except FileNotFoundError:
 		existing = None
 
-	desired = f'"{exe_path}"'
+	desired = f'"{exe_path}" {WATCHDOG_ARG}'
 	if existing != desired:
 		winreg.SetValueEx(key, "TypeSenseLogger", 0, winreg.REG_SZ, desired)
 	winreg.CloseKey(key)
