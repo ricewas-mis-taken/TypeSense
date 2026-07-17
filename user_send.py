@@ -78,8 +78,8 @@ def _flush_queue():
             if not lines:
                 continue
             print(f"[FLUSH] sending {len(lines)} items from {queue_file.name}")
-            sent = []
-            for line in lines:
+            sent_idx = set()
+            for idx, line in enumerate(lines):
                 try:
                     payload = json.loads(line)
                     data = payload.get("data", {})
@@ -90,11 +90,11 @@ def _flush_queue():
                     r = requests.post(url, json=payload, timeout=5)
                     print(f"[FLUSH] response: {r.status_code}")
                     if r.status_code == 200:
-                        sent.append(line)
+                        sent_idx.add(idx)
                 except Exception as e:
                     print(f"[FLUSH] error:{e}")
                     break
-            remaining = [l for l in lines if l not in sent]
+            remaining = [l for idx, l in enumerate(lines) if idx not in sent_idx]
             tmp_file = queue_file.with_suffix(".tmp")
             tmp_file.write_text("\n".join(remaining))
             tmp_file.replace(queue_file)
