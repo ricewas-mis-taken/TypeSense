@@ -230,10 +230,6 @@ class Simplekeylog:
 		if self.total_release % 10 == 0:
 			self._kf.flush()
 		self.window_release += 1
-		if key == Key.esc:
-			print("Esc detected - Shutting Down")
-			self.shutdown()
-			os._exit(0)
 
 		self.flush_windows()
 
@@ -336,5 +332,5 @@ def start_listener():
 			continue
 		break
 threading.Thread(target=start_listener, daemon=True).start()
-print("[Logger] Running. Survey every 20m. ESC to stop.")
+print("[Logger] Running. Survey every 20m. Use tray icon 'Quit Logger' to stop.")
 root.mainloop()
