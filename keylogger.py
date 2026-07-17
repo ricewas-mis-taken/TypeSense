@@ -16,9 +16,10 @@ from app_paths import get_app_data_dir
 
 
 def ensure_single_instance():
+	kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 	mutex_name = "Global\\TypeSenseLogger_SingleInstance_Mutex"
-	mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
-	last_error = ctypes.windll.kernel32.GetLastError()
+	mutex = kernel32.CreateMutexW(None, False, mutex_name)
+	last_error = ctypes.get_last_error()
 	ERROR_ALREADY_EXISTS = 183
 	if last_error == ERROR_ALREADY_EXISTS:
 		os._exit(0)
