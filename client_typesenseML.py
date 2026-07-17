@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from waitress import serve
 import csv, json
 from pathlib import Path
 from datetime import datetime
@@ -77,4 +78,4 @@ def receive_survey():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    serve(app, host="0.0.0.0", port=5000)
