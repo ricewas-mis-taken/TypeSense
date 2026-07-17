@@ -26,6 +26,16 @@ QUEUE_FILE.parent.mkdir(exist_ok=True)
 _queue_lock = threading.Lock()
 
 
+def _log_event(msg):
+    """The packaged exe is built --noconsole, so print() output has nowhere to
+    go - without this, retry/flush errors leave no trace to diagnose later."""
+    try:
+        with open(BASE_DIR / "runtime.log", "a", encoding="utf-8") as f:
+            f.write(f"{time.ctime()}: {msg}\n")
+    except Exception:
+        pass
+
+
 def _require_config():
     if SERVER_URL is None:
         raise RuntimeError(f"Missing config.json at {_config_path} — cannot determine server_url/secret_token")
@@ -34,11 +44,11 @@ def _require_config():
 def _retry_loop():
     while True:
         time.sleep(30)
-        print("retry loop running, queue flush")
+        _log_event("retry loop running, queue flush")
         try:
             _flush_queue()
         except Exception as e:
-            print(f"retry error:{e}")
+            _log_event(f"retry error:{e}")
 
 
 def start_retry_loop():
@@ -69,17 +79,17 @@ def _flush_queue():
             return
         all_files = list(queue_dir.glob("*.jsonl"))
         if not all_files:
-            print("[FLUSH] queue is empty")
+            _log_event("[FLUSH] queue is empty")
             return
-        print(f"[FLUSH] found {len(all_files)} queue files")
+        _log_event(f"[FLUSH] found {len(all_files)} queue files")
 
         for queue_file in all_files:
             lines = queue_file.read_text().strip().splitlines()
             if not lines:
                 continue
-            print(f"[FLUSH] sending {len(lines)} items from {queue_file.name}")
-            sent = []
-            for line in lines:
+            _log_event(f"[FLUSH] sending {len(lines)} items from {queue_file.name}")
+            sent_idx = set()
+            for idx, line in enumerate(lines):
                 try:
                     payload = json.loads(line)
                     data = payload.get("data", {})
@@ -88,21 +98,21 @@ def _flush_queue():
                     else:
                         url = SERVER_URL
                     r = requests.post(url, json=payload, timeout=5)
-                    print(f"[FLUSH] response: {r.status_code}")
+                    _log_event(f"[FLUSH] response: {r.status_code}")
                     if r.status_code == 200:
-                        sent.append(line)
+                        sent_idx.add(idx)
                 except Exception as e:
-                    print(f"[FLUSH] error:{e}")
+                    _log_event(f"[FLUSH] error:{e}")
                     break
-            remaining = [l for l in lines if l not in sent]
+            remaining = [l for idx, l in enumerate(lines) if idx not in sent_idx]
             tmp_file = queue_file.with_suffix(".tmp")
             tmp_file.write_text("\n".join(remaining))
             tmp_file.replace(queue_file)
             if not remaining:
                 queue_file.unlink()
-                print(f"[FLUSH] {queue_file.name} cleared and deleted")
+                _log_event(f"[FLUSH] {queue_file.name} cleared and deleted")
             else:
-                print(f"[FLUSH] {queue_file.name} items remaining")
+                _log_event(f"[FLUSH] {queue_file.name} items remaining")
 
 
 def send_survey(data: dict):

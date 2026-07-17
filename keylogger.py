@@ -3,7 +3,7 @@ from pathlib import Path
 from pynput.keyboard import Key, Listener
 import user_send
 import tkinter as tk
-from survey import show_survey
+from survey import show_survey, SURVEY_INTERVAL_SEC
 import threading
 import os
 import sys
@@ -18,6 +18,17 @@ from app_paths import get_app_data_dir
 
 RELAUNCH_CHECK_INTERVAL_MIN = 20
 RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
+
+
+def _log_event(msg):
+	"""The packaged exe is built --noconsole, so print() output has nowhere to
+	go - without this, crashes and errors that don't happen at startup leave
+	no trace to diagnose later."""
+	try:
+		with open(get_app_data_dir() / "runtime.log", "a", encoding="utf-8") as f:
+			f.write(f"{time.ctime()}: {msg}\n")
+	except Exception:
+		pass
 
 
 def _create_mutex(name):
@@ -61,7 +72,7 @@ def ensure_relaunch_task():
 	if not getattr(sys, "frozen", False):
 		return
 	exe_path = sys.executable
-	subprocess.run(
+	result = subprocess.run(
 		[
 			"schtasks", "/Create", "/F",
 			"/TN", RELAUNCH_TASK_NAME,
@@ -71,7 +82,10 @@ def ensure_relaunch_task():
 		],
 		creationflags=subprocess.CREATE_NO_WINDOW,
 		capture_output=True,
+		text=True,
 	)
+	if result.returncode != 0:
+		_log_event(f"[ensure_relaunch_task] schtasks failed ({result.returncode}): {result.stderr.strip()}")
 
 
 
@@ -115,10 +129,10 @@ class Simplekeylog:
 		self._kw = csv.writer(self._kf)
 
 		if kf_is_new:
-			self._kw.writerow(["session","ts_ns","event", "cat", "dwell time"])
+			self._kw.writerow(["session","ts_ns","event", "cat", "dwell_time"])
 		if ff_is_new:
-			self._ff.writerow(["session","time now", "total press", "total release", "avg_dwell", "shortest dwell", "longest dwell",
-							   "avg_flight", "shortest flight", "longest flight", "avg_burst","max_burst","num_bursts"])
+			self._ff.writerow(["session","time_now", "total_press", "total_release", "avg_dwell", "shortest_dwell", "longest_dwell",
+							   "avg_flight", "shortest_flight", "longest_flight", "avg_burst","max_burst","num_bursts"])
 
 		self.events = []
 		self.all_dwell = []
@@ -211,9 +225,13 @@ class Simplekeylog:
 			self._on_press(key)
 		except Exception as e:
 			print(f"[on_press] error: {e!r}")
+			_log_event(f"[on_press] error: {e!r}")
 
 	def _on_press(self, key):
 		now = time.perf_counter_ns()
+		prev = self._press_times.get(key)
+		if prev is not None and now - prev < 2_000_000_000:
+			return  # OS auto-repeat while the key is held, not a new keystroke
 		cat = categorize(key)
 		self._press_times[key] = now
 		flight_void = {5,6,7,8,9}
@@ -239,6 +257,7 @@ class Simplekeylog:
 			self._on_release(key)
 		except Exception as e:
 			print(f"[on_release] error: {e!r}")
+			_log_event(f"[on_release] error: {e!r}")
 
 	def _on_release(self, key):
 		now = time.perf_counter_ns()
@@ -334,7 +353,7 @@ threading.Thread(target=tray_icon.run, daemon=True).start()
 
 def survey_scheduler():
 	show_survey(logger.session_id)
-	root.after(1200000,survey_scheduler)
+	root.after(SURVEY_INTERVAL_SEC * 1000, survey_scheduler)
 
 def show_session_id():
 	root.deiconify()
@@ -346,7 +365,7 @@ def show_session_id():
 if logger.is_first_run:
 	root.after(1000, show_session_id)
 
-root.after(1200000, survey_scheduler)
+root.after(SURVEY_INTERVAL_SEC * 1000, survey_scheduler)
 def start_listener():
 	while True:
 		try:
@@ -354,6 +373,8 @@ def start_listener():
 				listener.join()
 		except Exception as e:
 			print(f"[Listener] crashed: {e!r}, restarting")
+			_log_event(f"[Listener] crashed: {e!r}, restarting")
+			time.sleep(2)
 			continue
 		break
 threading.Thread(target=start_listener, daemon=True).start()
