@@ -23,6 +23,7 @@ config.json
 server_config.json
 build/
 dist/
+TypeSense Sharing/
 TypeSenseLogger.spec
 participant_id.txt
 cahnges/
