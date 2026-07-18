@@ -34,7 +34,11 @@ def _log_event(msg):
 def _create_mutex(name):
 	kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 	mutex = kernel32.CreateMutexW(None, False, name)
-	if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+	if not mutex:
+		# CreateMutexW failed outright (not "already exists") - we can't guarantee
+		# single-instance, but exiting here would be worse than just logging and continuing.
+		_log_event(f"[_create_mutex] CreateMutexW failed, error={ctypes.get_last_error()}")
+	elif ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
 		os._exit(0)
 	return mutex
 
