@@ -41,6 +41,17 @@ def _require_config():
         raise RuntimeError(f"Missing config.json at {_config_path} — cannot determine server_url/secret_token")
 
 
+def _survey_url():
+    """The config only stores one server_url (the /data endpoint) - derive /survey
+    from it explicitly rather than assuming callers get it right, and log loudly
+    if server_url doesn't have the expected shape instead of silently misrouting."""
+    if SERVER_URL and SERVER_URL.endswith("/data"):
+        return SERVER_URL[: -len("/data")] + "/survey"
+    _log_event(f"[_survey_url] SERVER_URL {SERVER_URL!r} does not end with '/data' — "
+               f"falling back to it unchanged for the survey endpoint, this is likely wrong")
+    return SERVER_URL
+
+
 def _retry_loop():
     while True:
         time.sleep(30)
@@ -94,7 +105,7 @@ def _flush_queue():
                     payload = json.loads(line)
                     data = payload.get("data", {})
                     if "stress" in data:
-                        url = SERVER_URL.replace("/data", "/survey")
+                        url = _survey_url()
                     else:
                         url = SERVER_URL
                     r = requests.post(url, json=payload, timeout=5)
@@ -118,7 +129,7 @@ def _flush_queue():
 def send_survey(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
     try:
-        r = requests.post(SERVER_URL.replace("/data", "/survey"), json=payload, timeout=5)
+        r = requests.post(_survey_url(), json=payload, timeout=5)
         if r.status_code != 200:
             _queue(payload)
     except requests.exceptions.RequestException:
