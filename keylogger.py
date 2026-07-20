@@ -315,7 +315,12 @@ def tray_icon():
 		logger.shutdown()
 		os._exit(0)
 	def show_survey_now(icon,item):
-		root.after(0,lambda:show_survey(logger.session_id))
+		def _trigger():
+			global _next_survey_at, _interval_start_press
+			show_survey(logger.session_id)
+			_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
+			_interval_start_press = logger.total_press
+		root.after(0, _trigger)
 	def show_id_now(icon,item):
 		root.after(0, show_session_id)
 
@@ -355,9 +360,33 @@ except Exception as e:
 tray_icon = tray_icon()
 threading.Thread(target=tray_icon.run, daemon=True).start()
 
-def survey_scheduler():
-	show_survey(logger.session_id)
-	root.after(SURVEY_INTERVAL_SEC * 1000, survey_scheduler)
+SURVEY_POLL_MS = 30_000
+SURVEY_MIN_KEYSTROKES = 10  # fewer than this in the interval means the user was away or barely typing - skip that survey rather than interrupt them
+
+_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
+_last_poll_at = time.time()
+_interval_start_press = logger.total_press
+
+def survey_poll():
+	"""Tk's after() schedules against wall-clock deadlines, but the event loop
+	freezes for the duration of a sleep/hibernate - on wake it sees the
+	20-minute deadline as already elapsed and would fire the survey instantly.
+	Polling frequently and checking the gap since our last poll lets us tell
+	"20 minutes really passed" apart from "the machine was asleep", so we
+	reset the deadline instead of firing right when the user wakes it up."""
+	global _next_survey_at, _last_poll_at, _interval_start_press
+	now = time.time()
+	gap = now - _last_poll_at
+	_last_poll_at = now
+	if gap > (SURVEY_POLL_MS / 1000) * 3:
+		_next_survey_at = now + SURVEY_INTERVAL_SEC
+		_interval_start_press = logger.total_press
+	elif now >= _next_survey_at:
+		if logger.total_press - _interval_start_press >= SURVEY_MIN_KEYSTROKES:
+			show_survey(logger.session_id)
+		_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
+		_interval_start_press = logger.total_press
+	root.after(SURVEY_POLL_MS, survey_poll)
 
 def show_session_id():
 	root.deiconify()
@@ -369,7 +398,7 @@ def show_session_id():
 if logger.is_first_run:
 	root.after(1000, show_session_id)
 
-root.after(SURVEY_INTERVAL_SEC * 1000, survey_scheduler)
+root.after(SURVEY_POLL_MS, survey_poll)
 def start_listener():
 	while True:
 		try:
