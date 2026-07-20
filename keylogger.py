@@ -14,6 +14,7 @@ from tkinter import messagebox
 import pystray
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
+import updater
 
 
 RELAUNCH_CHECK_INTERVAL_MIN = 20
@@ -349,6 +350,7 @@ try:
 	user_send.init_queue(logger.session_id)
 	user_send._flush_queue()
 	user_send.start_retry_loop()
+	updater.check_for_update_async()
 except Exception as e:
 	error_log = get_app_data_dir() / "startup_error.log"
 	error_log.write_text(f"{time.ctime()}: {e!r}\n", encoding="utf-8")
