@@ -4,7 +4,8 @@
 [Setup]
 AppId={{6B2F1B7C-5B7E-4C36-9C6B-2A1A2C6C1B7A}
 AppName={#MyAppName}
-AppVersion=1.0
+AppVersion=1.1.0
+AppMutex=Global\TypeSenseLogger_SingleInstance_Mutex
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -26,4 +27,4 @@ Source: "dist\TypeSenseLogger\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags: nowait postinstall

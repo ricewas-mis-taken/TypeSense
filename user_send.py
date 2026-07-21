@@ -103,6 +103,14 @@ def _flush_queue():
             for idx, line in enumerate(lines):
                 try:
                     payload = json.loads(line)
+                except json.JSONDecodeError as e:
+                    # A malformed line can never parse no matter how many times we
+                    # retry it - dropping it (instead of breaking the whole flush)
+                    # keeps one bad entry from wedging every item behind it forever.
+                    _log_event(f"[FLUSH] dropping unparseable line {idx} in {queue_file.name}: {e}")
+                    sent_idx.add(idx)
+                    continue
+                try:
                     data = payload.get("data", {})
                     if "stress" in data:
                         url = _survey_url()
