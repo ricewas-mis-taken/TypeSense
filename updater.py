@@ -16,7 +16,16 @@ _INSTALLER_ASSET_NAME = "TypeSenseSetup.exe"
 _RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
 _CHECK_INTERVAL_SEC = 5 * 60
 _MIN_INSTALLER_BYTES = 100_000  # sanity floor so a truncated/HTML error response is never executed as an installer
-GITHUB_TOKEN = ""  # fine-grained PAT scoped to "Public Repositories (read-only)" - safe to ship since it only grants access to data that's already public, but raises the API rate limit from 60/hr (per IP) to 5000/hr (per token). Leave blank to fall back to unauthenticated requests.
+
+if getattr(sys, "frozen", False):
+	_CONFIG_DIR = Path(sys.executable).parent
+else:
+	_CONFIG_DIR = Path(__file__).parent
+_config_path = _CONFIG_DIR / "config.json"
+if _config_path.exists():
+	GITHUB_TOKEN = json.loads(_config_path.read_text()).get("github_token", "")
+else:
+	GITHUB_TOKEN = ""
 
 
 def _log(msg):
