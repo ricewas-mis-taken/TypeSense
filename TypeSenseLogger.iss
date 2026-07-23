@@ -4,7 +4,7 @@
 [Setup]
 AppId={{6B2F1B7C-5B7E-4C36-9C6B-2A1A2C6C1B7A}
 AppName={#MyAppName}
-AppVersion=1.2.0
+AppVersion=1.2.1
 AppMutex=Global\TypeSenseLogger_SingleInstance_Mutex
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
