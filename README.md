@@ -126,7 +126,6 @@ keylogger.py                           client_typesenseML.py (Flask)
 ```
 
 ### Offline Resilience
-* Failed sends saved to `queue/queue_[session_id].jsonl`
 * Retry loop attempts flush every 30 seconds while running
 * On next startup, queue flushed immediately before new data collection
 * Survey responses and keystroke windows queued separately, routed to correct endpoints on retry
@@ -146,66 +145,6 @@ keystroke-research/
 └── LICENSE                   # MIT
 ```
 
-### Not in this repo (excluded by .gitignore)
-```
-data/           # keystroke window CSVs per participant (server)
-surveys/        # survey response CSVs per participant (server)
-simple_data/    # raw keystroke event logs (client, local only)
-queue/          # offline queue files (client, local only)
-training/       # generated ML training data
-ml/             # autoencoder + training pipeline (private)
-config.json          # client server URL + secret token (local only)
-server_config.json   # server secret token (local only)
-```
-
----
-
-## Setup
-
-### Client (participant's machine)
-```bash
-pip install pynput requests pillow pystray
-python keylogger.py
-# runs silently, ESC to stop
-```
-
-### Configuration
-Create `config.json` next to `keylogger.py` (not committed to the repo):
-```json
-{
-    "server_url": "http://your-server-ip:5000/data",
-    "secret_token": "your-shared-secret"
-}
-```
-
-Create `server_config.json` next to `client_typesenseML.py` (not committed to the repo):
-```json
-{
-    "secret_token": "your-shared-secret"
-}
-```
-The token must match on both sides.
-
-## Building Training Data
-
-After collecting data from participants:
-
-```bash
-python data_comp.py
-```
-
-Outputs:
-* `training/training_[session_id].csv` — per participant labeled examples
-* `training/training_ALL.csv` — all participants merged, ready for ML
-
-Each row pairs the average of the 4 keystroke windows before a survey response with that survey's stress/focus/energy labels:
-
-```
-avg_dwell, avg_flight, avg_burst, ..., stress, focus, energy, activity
-67.3,      110.2,      7.8,       ..., 5,      3,     4,      Coding
-```
-
----
 
 ## EMA Survey
 
@@ -244,7 +183,6 @@ This project builds on and extends:
 
 ## Ethical Considerations
 
-* All participants provide written informed consent before installation
 * Zero key content captured — timing and category only
 * Data stored on researcher-controlled server, never third-party cloud
 * Participant IDs are random session UUIDs, not names
@@ -264,8 +202,7 @@ Implementation assisted by AI tools; research design, study protocol, and analys
 ---
 
 ## License
-
-MIT License — see LICENSE file. You may use, modify, and distribute this code with attribution.
+ License — see LICENSE file. 
 
 ---
 
