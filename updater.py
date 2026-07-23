@@ -14,8 +14,9 @@ GITHUB_REPO = "ricewas-mis-taken/TypeSense"
 _RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 _INSTALLER_ASSET_NAME = "TypeSenseSetup.exe"
 _RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
-_CHECK_INTERVAL_SEC = 24 * 60 * 60
+_CHECK_INTERVAL_SEC = 5 * 60
 _MIN_INSTALLER_BYTES = 100_000  # sanity floor so a truncated/HTML error response is never executed as an installer
+GITHUB_TOKEN = ""  # fine-grained PAT scoped to "Public Repositories (read-only)" - safe to ship since it only grants access to data that's already public, but raises the API rate limit from 60/hr (per IP) to 5000/hr (per token). Leave blank to fall back to unauthenticated requests.
 
 
 def _log(msg):
@@ -39,10 +40,10 @@ def _is_newer(remote_tag, local_version):
 
 
 def _fetch_latest_release():
-	req = urllib.request.Request(
-		_RELEASES_API,
-		headers={"Accept": "application/vnd.github+json", "User-Agent": "TypeSenseLogger-Updater"},
-	)
+	headers = {"Accept": "application/vnd.github+json", "User-Agent": "TypeSenseLogger-Updater"}
+	if GITHUB_TOKEN:
+		headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+	req = urllib.request.Request(_RELEASES_API, headers=headers)
 	with urllib.request.urlopen(req, timeout=10) as resp:
 		return json.loads(resp.read().decode("utf-8"))
 
