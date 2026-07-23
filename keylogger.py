@@ -20,6 +20,8 @@ import updater
 RELAUNCH_CHECK_INTERVAL_MIN = 20
 RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
 
+dnd_enabled = threading.Event()
+
 
 def _log_event(msg):
 	"""The packaged exe is built --noconsole, so print() output has nowhere to
@@ -137,7 +139,7 @@ class Simplekeylog:
 			self._kw.writerow(["session","ts_ns","event", "cat", "dwell_time"])
 		if ff_is_new:
 			self._ff.writerow(["session","time_now", "total_press", "total_release", "avg_dwell", "shortest_dwell", "longest_dwell",
-							   "avg_flight", "shortest_flight", "longest_flight", "avg_burst","max_burst","num_bursts"])
+							   "avg_flight", "shortest_flight", "longest_flight", "avg_burst","max_burst","num_bursts","gaming"])
 
 		self.events = []
 		self.all_dwell = []
@@ -217,6 +219,7 @@ class Simplekeylog:
 			"avg_burst": avg_burst,
 			"max_burst": max_burst,
 			"num_bursts": num_burst,
+			"gaming": dnd_enabled.is_set(),
 		}
 
 		self._ff.writerow(list(row.values()))
@@ -306,11 +309,13 @@ class Simplekeylog:
 		self.all_flight.clear()
 		self.window_start_ns = now
 
-def tray_icon():
+def _dnd_icon_image():
 	img = Image.new("RGB",(64,64),color=(0,0,0))
 	draw = ImageDraw.Draw(img)
-	draw.ellipse([8,8,56,56],fill = (45,125,70))
+	draw.ellipse([8,8,56,56],fill = (200,40,40) if dnd_enabled.is_set() else (45,125,70))
+	return img
 
+def tray_icon():
 	def quit_app(icon,item):
 		icon.stop()
 		logger.shutdown()
@@ -324,14 +329,22 @@ def tray_icon():
 		root.after(0, _trigger)
 	def show_id_now(icon,item):
 		root.after(0, show_session_id)
+	def toggle_dnd(icon,item):
+		if dnd_enabled.is_set():
+			dnd_enabled.clear()
+		else:
+			dnd_enabled.set()
+		icon.icon = _dnd_icon_image()
+		icon.title = "TypeSense - DND Gaming, No Survey" if dnd_enabled.is_set() else "TypeSense - Running"
 
 	menu = pystray.Menu(
 		pystray.MenuItem("Show ID", show_id_now),
 		pystray.MenuItem("Show Survey Now", show_survey_now),
+		pystray.MenuItem("DND Gaming, No Survey", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
 		pystray.MenuItem("Quit Logger", quit_app)
 	)
 	icon = pystray.Icon(
-		"TypeSenseLogger", img,
+		"TypeSenseLogger", _dnd_icon_image(),
 		"TypeSense - Running",
 		menu
 	)
@@ -384,7 +397,7 @@ def survey_poll():
 		_next_survey_at = now + SURVEY_INTERVAL_SEC
 		_interval_start_press = logger.total_press
 	elif now >= _next_survey_at:
-		if logger.total_press - _interval_start_press >= SURVEY_MIN_KEYSTROKES:
+		if logger.total_press - _interval_start_press >= SURVEY_MIN_KEYSTROKES and not dnd_enabled.is_set():
 			show_survey(logger.session_id)
 		_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 		_interval_start_press = logger.total_press
