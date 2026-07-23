@@ -14,8 +14,18 @@ GITHUB_REPO = "ricewas-mis-taken/TypeSense"
 _RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 _INSTALLER_ASSET_NAME = "TypeSenseSetup.exe"
 _RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
-_CHECK_INTERVAL_SEC = 24 * 60 * 60
+_CHECK_INTERVAL_SEC = 5 * 60
 _MIN_INSTALLER_BYTES = 100_000  # sanity floor so a truncated/HTML error response is never executed as an installer
+
+if getattr(sys, "frozen", False):
+	_CONFIG_DIR = Path(sys.executable).parent
+else:
+	_CONFIG_DIR = Path(__file__).parent
+_config_path = _CONFIG_DIR / "config.json"
+if _config_path.exists():
+	GITHUB_TOKEN = json.loads(_config_path.read_text()).get("github_token", "")
+else:
+	GITHUB_TOKEN = ""
 
 
 def _log(msg):
@@ -39,10 +49,10 @@ def _is_newer(remote_tag, local_version):
 
 
 def _fetch_latest_release():
-	req = urllib.request.Request(
-		_RELEASES_API,
-		headers={"Accept": "application/vnd.github+json", "User-Agent": "TypeSenseLogger-Updater"},
-	)
+	headers = {"Accept": "application/vnd.github+json", "User-Agent": "TypeSenseLogger-Updater"}
+	if GITHUB_TOKEN:
+		headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+	req = urllib.request.Request(_RELEASES_API, headers=headers)
 	with urllib.request.urlopen(req, timeout=10) as resp:
 		return json.loads(resp.read().decode("utf-8"))
 
