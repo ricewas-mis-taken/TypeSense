@@ -15,6 +15,7 @@ import pystray
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
 import updater
+from version import __version__
 
 
 RELAUNCH_CHECK_INTERVAL_MIN = 20
@@ -329,6 +330,8 @@ def tray_icon():
 		root.after(0, _trigger)
 	def show_id_now(icon,item):
 		root.after(0, show_session_id)
+	def show_version_now(icon,item):
+		root.after(0, show_app_version)
 	def toggle_dnd(icon,item):
 		if dnd_enabled.is_set():
 			dnd_enabled.clear()
@@ -339,6 +342,7 @@ def tray_icon():
 
 	menu = pystray.Menu(
 		pystray.MenuItem("Show ID", show_id_now),
+		pystray.MenuItem("Show Version", show_version_now),
 		pystray.MenuItem("Show Survey Now", show_survey_now),
 		pystray.MenuItem("DND Gaming, No Survey", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
 		pystray.MenuItem("Quit Logger", quit_app)
@@ -402,6 +406,13 @@ def survey_poll():
 		_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 		_interval_start_press = logger.total_press
 	root.after(SURVEY_POLL_MS, survey_poll)
+
+def show_app_version():
+	root.deiconify()
+	root.focus_force()
+	messagebox.showinfo(
+		"TypeSense Version",
+		f"You are running version: {__version__}")
 
 def show_session_id():
 	root.deiconify()
