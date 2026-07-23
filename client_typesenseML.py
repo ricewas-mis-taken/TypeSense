@@ -35,7 +35,7 @@ COLUMNS = [
     "session", "time_now", "total_press", "total_release",
     "avg_dwell", "shortest_dwell", "longest_dwell",
     "avg_flight", "shortest_flight", "longest_flight",
-    "avg_burst", "max_burst", "num_bursts",
+    "avg_burst", "max_burst", "num_bursts", "gaming",
     "received_at"
 ]
 
