@@ -28,12 +28,31 @@ else:
 	GITHUB_TOKEN = ""
 
 
+_VERSION_FILE = get_app_data_dir() / "current_version.txt"
+
+
 def _log(msg):
 	try:
 		with open(get_app_data_dir() / "runtime.log", "a", encoding="utf-8") as f:
 			f.write(f"{time.ctime()}: [updater] {msg}\n")
 	except Exception:
 		pass
+
+
+def current_version():
+	"""The installed version, tracked in a file that outlives the exe getting
+	replaced in-place by an update - not the __version__ baked into whichever
+	build happens to be running, which would still say the pre-update number
+	right after an update runs."""
+	if _VERSION_FILE.exists():
+		saved = _VERSION_FILE.read_text().strip()
+		if saved:
+			return saved
+	return __version__
+
+
+def _record_version(tag):
+	_VERSION_FILE.write_text(tag)
 
 
 def _parse_version(v):
@@ -91,7 +110,8 @@ def _apply_update(installer_path):
 def _check_once():
 	release = _fetch_latest_release()
 	remote_tag = release.get("tag_name", "")
-	if not remote_tag or not _is_newer(remote_tag, __version__):
+	local_version = current_version()
+	if not remote_tag or not _is_newer(remote_tag, local_version):
 		return
 
 	asset = next(
@@ -111,7 +131,8 @@ def _check_once():
 		_log(f"downloaded installer for {remote_tag} looked truncated/invalid, skipping update")
 		return
 
-	_log(f"updating {__version__} -> {remote_tag}")
+	_log(f"updating {local_version} -> {remote_tag}")
+	_record_version(remote_tag)
 	_apply_update(dest)
 
 
