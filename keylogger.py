@@ -15,7 +15,6 @@ import pystray
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
 import updater
-from version import __version__
 
 
 RELAUNCH_CHECK_INTERVAL_MIN = 20
@@ -412,7 +411,7 @@ def show_app_version():
 	root.focus_force()
 	messagebox.showinfo(
 		"TypeSense Version",
-		f"You are running version: {__version__}")
+		f"You are running version: {updater.current_version()}")
 
 def show_session_id():
 	root.deiconify()
