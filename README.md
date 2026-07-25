@@ -1,4 +1,5 @@
-# NOTE: The app now auto-updates itself in the background (checks every 5 minutes). If you're on v1.1.0 or earlier, download the latest installer once — after that you'll always be current automatically.
+# NOTE: IF YOU ARE ON VERSION 1.1.0 or earlier, YOU WILL NOT AUTO-UPDATE TO THE NEWEST VERSION, NOR WILL YOUR DATA BE SENT TO THE SERVER. DOWNLOAD THE LATEST VERSION FROM RELEASES
+
 
 
 # TypeSense
