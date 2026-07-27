@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import time
+import winsound
 import user_send as sender
 
 
@@ -13,9 +14,19 @@ def show_survey(session_id: str):
 	root.geometry("320x420")
 	root.resizable(False, False)
 	root.attributes("-topmost", True)
-	root.protocol("WM_DELETE_WINDOW", lambda: None)
-	root.bind("<Escape>", lambda e: None)
-	root.bind("<Alt-F4>", lambda e: None)
+	# -toolwindow gives a slim title bar with only a close button - no
+	# minimize/maximize box - so the survey can't be minimized away.
+	root.attributes("-toolwindow", True)
+
+	def _deny_close(event=None):
+		# The red X still shows (it's part of -toolwindow's title bar) but
+		# closing is blocked; beep so it's clear the click registered instead
+		# of silently doing nothing, which read as the window lagging/frozen.
+		winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+
+	root.protocol("WM_DELETE_WINDOW", _deny_close)
+	root.bind("<Escape>", _deny_close)
+	root.bind("<Alt-F4>", _deny_close)
 
 	tk.Label(root, text="Quick Check In!", font=("Arial", 13, "bold")).pack(pady=(16,8))
 	sliders = {}
