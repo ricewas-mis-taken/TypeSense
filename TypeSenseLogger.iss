@@ -5,10 +5,10 @@
 AppId={{6B2F1B7C-5B7E-4C36-9C6B-2A1A2C6C1B7A}
 AppName={#MyAppName}
 ; Without this, Inno defaults the Apps & Features "Name" column to
-; "AppName AppVersion" ("TypeSense 1.2.3") - pin it to just the app name so
+; "AppName AppVersion" ("TypeSense 1.3.0") - pin it to just the app name so
 ; the version only shows in its own column, not baked into the title.
 AppVerName={#MyAppName}
-AppVersion=1.2.3
+AppVersion=1.3.0
 AppMutex=Global\TypeSenseLogger_SingleInstance_Mutex
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
