@@ -3,7 +3,7 @@ from pathlib import Path
 from pynput.keyboard import Key, Listener
 import user_send
 import tkinter as tk
-from survey import show_survey, SURVEY_INTERVAL_SEC
+from survey import show_survey, SURVEY_INTERVAL_SEC, show_mode_reminder
 import threading
 import os
 import sys
@@ -330,7 +330,44 @@ def _tray_title():
 		modes.append("DND")
 	if gaming_enabled.is_set():
 		modes.append("Gaming")
-	return f"TypeSense - {' + '.join(modes)}, No Survey" if modes else "TypeSense - Running"
+	return f"TypeSense - {' + '.join(modes)}" if modes else "TypeSense - Running"
+
+MODE_REMINDER_POLL_MS = 30_000
+MODE_REMINDER_FIRST_SEC = 2 * 60 * 60  # nag once a mode's been on this long
+MODE_REMINDER_REPEAT_SEC = 60 * 60     # then keep nagging hourly if ignored
+
+_mode_flags = {"dnd": dnd_enabled, "gaming": gaming_enabled}
+_mode_labels = {"dnd": "Do Not Disturb", "gaming": "Gaming Mode"}
+# None means "not running" / "no reminder pending" - set to a deadline whenever
+# the mode turns on, and cleared whenever it turns off (by any path: tray
+# toggle, restart, or the reminder's own Stop button).
+_mode_next_reminder_at = {"dnd": None, "gaming": None}
+
+def _set_mode(key, enabled):
+	if enabled:
+		_mode_flags[key].set()
+		_mode_next_reminder_at[key] = time.time() + MODE_REMINDER_FIRST_SEC
+	else:
+		_mode_flags[key].clear()
+		_mode_next_reminder_at[key] = None
+	tray_icon.icon = _tray_icon_image()
+	tray_icon.title = _tray_title()
+
+def _mode_reminder_poll():
+	now = time.time()
+	for key in _mode_flags:
+		if not _mode_flags[key].is_set():
+			continue
+		due_at = _mode_next_reminder_at[key]
+		if due_at is None or now < due_at:
+			continue
+		_mode_next_reminder_at[key] = None  # don't re-fire while the dialog is open
+		def _on_stop(key=key):
+			_set_mode(key, False)
+		def _on_ignore(key=key):
+			_mode_next_reminder_at[key] = time.time() + MODE_REMINDER_REPEAT_SEC
+		show_mode_reminder(_mode_labels[key], _on_stop, _on_ignore)
+	root.after(MODE_REMINDER_POLL_MS, _mode_reminder_poll)
 
 def tray_icon():
 	def quit_app(icon,item):
@@ -352,28 +389,18 @@ def tray_icon():
 		# Pauses surveys until toggled back off or the app restarts - it's an
 		# in-memory flag, so a restart clears it naturally. Doesn't affect the
 		# `gaming` CSV tag - that's Gaming Mode's job.
-		if dnd_enabled.is_set():
-			dnd_enabled.clear()
-		else:
-			dnd_enabled.set()
-		icon.icon = _tray_icon_image()
-		icon.title = _tray_title()
+		_set_mode("dnd", not dnd_enabled.is_set())
 	def toggle_gaming(icon,item):
 		# Suppresses surveys like DND, but also tags logged windows with
 		# gaming=True so training can exclude gaming-session typing patterns.
-		if gaming_enabled.is_set():
-			gaming_enabled.clear()
-		else:
-			gaming_enabled.set()
-		icon.icon = _tray_icon_image()
-		icon.title = _tray_title()
+		_set_mode("gaming", not gaming_enabled.is_set())
 
 	menu = pystray.Menu(
 		pystray.MenuItem("Show ID", show_id_now),
 		pystray.MenuItem("Show Version", show_version_now),
 		pystray.MenuItem("Show Survey Now", show_survey_now),
-		pystray.MenuItem("Do Not Disturb, No Survey", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
-		pystray.MenuItem("Gaming Mode, No Survey", toggle_gaming, checked=lambda item: gaming_enabled.is_set()),
+		pystray.MenuItem("Do Not Disturb", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
+		pystray.MenuItem("Gaming Mode", toggle_gaming, checked=lambda item: gaming_enabled.is_set()),
 		pystray.MenuItem("Quit Logger", quit_app)
 	)
 	icon = pystray.Icon(
@@ -465,6 +492,7 @@ if logger.is_first_run:
 	root.after(1000, show_session_id)
 
 root.after(SURVEY_POLL_MS, survey_poll)
+root.after(MODE_REMINDER_POLL_MS, _mode_reminder_poll)
 def start_listener():
 	while True:
 		try:
