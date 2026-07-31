@@ -338,6 +338,7 @@ MODE_REMINDER_REPEAT_SEC = 60 * 60     # then keep nagging hourly if ignored
 
 _mode_flags = {"dnd": dnd_enabled, "gaming": gaming_enabled}
 _mode_labels = {"dnd": "Do Not Disturb", "gaming": "Gaming Mode"}
+_mode_other = {"dnd": "gaming", "gaming": "dnd"}
 # None means "not running" / "no reminder pending" - set to a deadline whenever
 # the mode turns on, and cleared whenever it turns off (by any path: tray
 # toggle, restart, or the reminder's own Stop button).
@@ -345,6 +346,12 @@ _mode_next_reminder_at = {"dnd": None, "gaming": None}
 
 def _set_mode(key, enabled):
 	if enabled:
+		# DND and Gaming Mode are mutually exclusive - turning one on turns
+		# the other off, rather than letting both suppress surveys at once.
+		other = _mode_other[key]
+		if _mode_flags[other].is_set():
+			_mode_flags[other].clear()
+			_mode_next_reminder_at[other] = None
 		_mode_flags[key].set()
 		_mode_next_reminder_at[key] = time.time() + MODE_REMINDER_FIRST_SEC
 	else:
