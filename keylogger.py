@@ -21,6 +21,7 @@ RELAUNCH_CHECK_INTERVAL_MIN = 20
 RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
 
 dnd_enabled = threading.Event()
+gaming_enabled = threading.Event()
 
 
 def _log_event(msg):
@@ -115,7 +116,9 @@ def categorize(key):
 		elif key == Key.esc: return 10
 		return 11
 
-MIN_KEYSTROKES_PER_WINDOW = 8
+# Below this, a window's dwell/flight averages are too noisy (too few samples)
+# to trust - both for the CSV row and for counting the window as "active" below.
+MIN_KEYSTROKES_PER_WINDOW = 15
 
 class Simplekeylog:
 	def __init__(self, out_dir = None, window_sec = 15):
@@ -156,6 +159,9 @@ class Simplekeylog:
 
 		self.window_press = 0
 		self.window_release = 0
+
+		self.active_window_count = 0
+		self.last_keystroke_ts = None
 
 	def _load_or_create_session_id(self):
 		id_file = get_app_data_dir() / "participant_id.txt"
@@ -219,7 +225,7 @@ class Simplekeylog:
 			"avg_burst": avg_burst,
 			"max_burst": max_burst,
 			"num_bursts": num_burst,
-			"gaming": dnd_enabled.is_set(),
+			"gaming": gaming_enabled.is_set(),
 		}
 
 		self._ff.writerow(list(row.values()))
@@ -252,6 +258,7 @@ class Simplekeylog:
 
 		self.events.append(("press", now, cat))
 		self._kw.writerow([self.session_id, now, "press", cat, ""])
+		self.last_keystroke_ts = time.time()
 
 		if self.total_press % 10 == 0:
 			self._kf.flush()
@@ -300,6 +307,7 @@ class Simplekeylog:
 			print(f"Window skipped - only {len(self.all_dwell)} keystrokes")
 		else:
 			self._write_window_row(now)
+			self.active_window_count += 1
 
 		self.window_press = 0
 		self.window_release = 0
@@ -309,11 +317,20 @@ class Simplekeylog:
 		self.all_flight.clear()
 		self.window_start_ns = now
 
-def _dnd_icon_image():
+def _tray_icon_image():
 	img = Image.new("RGB",(64,64),color=(0,0,0))
 	draw = ImageDraw.Draw(img)
-	draw.ellipse([8,8,56,56],fill = (200,40,40) if dnd_enabled.is_set() else (45,125,70))
+	active = dnd_enabled.is_set() or gaming_enabled.is_set()
+	draw.ellipse([8,8,56,56],fill = (200,40,40) if active else (45,125,70))
 	return img
+
+def _tray_title():
+	modes = []
+	if dnd_enabled.is_set():
+		modes.append("DND")
+	if gaming_enabled.is_set():
+		modes.append("Gaming")
+	return f"TypeSense - {' + '.join(modes)}, No Survey" if modes else "TypeSense - Running"
 
 def tray_icon():
 	def quit_app(icon,item):
@@ -322,32 +339,45 @@ def tray_icon():
 		os._exit(0)
 	def show_survey_now(icon,item):
 		def _trigger():
-			global _next_survey_at, _interval_start_press
+			global _next_survey_at, _interval_start_active_windows
 			show_survey(logger.session_id)
 			_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
-			_interval_start_press = logger.total_press
+			_interval_start_active_windows = logger.active_window_count
 		root.after(0, _trigger)
 	def show_id_now(icon,item):
 		root.after(0, show_session_id)
 	def show_version_now(icon,item):
 		root.after(0, show_app_version)
 	def toggle_dnd(icon,item):
+		# Pauses surveys until toggled back off or the app restarts - it's an
+		# in-memory flag, so a restart clears it naturally. Doesn't affect the
+		# `gaming` CSV tag - that's Gaming Mode's job.
 		if dnd_enabled.is_set():
 			dnd_enabled.clear()
 		else:
 			dnd_enabled.set()
-		icon.icon = _dnd_icon_image()
-		icon.title = "TypeSense - DND Gaming, No Survey" if dnd_enabled.is_set() else "TypeSense - Running"
+		icon.icon = _tray_icon_image()
+		icon.title = _tray_title()
+	def toggle_gaming(icon,item):
+		# Suppresses surveys like DND, but also tags logged windows with
+		# gaming=True so training can exclude gaming-session typing patterns.
+		if gaming_enabled.is_set():
+			gaming_enabled.clear()
+		else:
+			gaming_enabled.set()
+		icon.icon = _tray_icon_image()
+		icon.title = _tray_title()
 
 	menu = pystray.Menu(
 		pystray.MenuItem("Show ID", show_id_now),
 		pystray.MenuItem("Show Version", show_version_now),
 		pystray.MenuItem("Show Survey Now", show_survey_now),
-		pystray.MenuItem("DND Gaming, No Survey", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
+		pystray.MenuItem("Do Not Disturb, No Survey", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
+		pystray.MenuItem("Gaming Mode, No Survey", toggle_gaming, checked=lambda item: gaming_enabled.is_set()),
 		pystray.MenuItem("Quit Logger", quit_app)
 	)
 	icon = pystray.Icon(
-		"TypeSenseLogger", _dnd_icon_image(),
+		"TypeSenseLogger", _tray_icon_image(),
 		"TypeSense - Running",
 		menu
 	)
@@ -379,11 +409,22 @@ tray_icon = tray_icon()
 threading.Thread(target=tray_icon.run, daemon=True).start()
 
 SURVEY_POLL_MS = 30_000
-SURVEY_MIN_KEYSTROKES = 10  # fewer than this in the interval means the user was away or barely typing - skip that survey rather than interrupt them
+SURVEY_MIN_ACTIVE_WINDOWS = 4  # need real activity in at least this many of the ~80 15s windows in the interval
+SURVEY_RECENCY_SEC = 300  # skip the survey if the last keystroke was this long ago - they're AFK, don't interrupt
 
 _next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 _last_poll_at = time.time()
-_interval_start_press = logger.total_press
+_interval_start_active_windows = logger.active_window_count
+
+def _should_show_survey(now):
+	if dnd_enabled.is_set() or gaming_enabled.is_set():
+		return False
+	active_windows = logger.active_window_count - _interval_start_active_windows
+	if active_windows < SURVEY_MIN_ACTIVE_WINDOWS:
+		return False
+	if logger.last_keystroke_ts is None or now - logger.last_keystroke_ts > SURVEY_RECENCY_SEC:
+		return False
+	return True
 
 def survey_poll():
 	"""Tk's after() schedules against wall-clock deadlines, but the event loop
@@ -392,18 +433,18 @@ def survey_poll():
 	Polling frequently and checking the gap since our last poll lets us tell
 	"20 minutes really passed" apart from "the machine was asleep", so we
 	reset the deadline instead of firing right when the user wakes it up."""
-	global _next_survey_at, _last_poll_at, _interval_start_press
+	global _next_survey_at, _last_poll_at, _interval_start_active_windows
 	now = time.time()
 	gap = now - _last_poll_at
 	_last_poll_at = now
 	if gap > (SURVEY_POLL_MS / 1000) * 3:
 		_next_survey_at = now + SURVEY_INTERVAL_SEC
-		_interval_start_press = logger.total_press
+		_interval_start_active_windows = logger.active_window_count
 	elif now >= _next_survey_at:
-		if logger.total_press - _interval_start_press >= SURVEY_MIN_KEYSTROKES and not dnd_enabled.is_set():
+		if _should_show_survey(now):
 			show_survey(logger.session_id)
 		_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
-		_interval_start_press = logger.total_press
+		_interval_start_active_windows = logger.active_window_count
 	root.after(SURVEY_POLL_MS, survey_poll)
 
 def show_app_version():
