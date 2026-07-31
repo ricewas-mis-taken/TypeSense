@@ -146,10 +146,14 @@ Right-click the tray icon for:
 * **Show ID** — the participant's session UUID (also shown automatically on first run)
 * **Show Version** — the currently installed app version
 * **Show Survey Now** — trigger a mood survey immediately
-* **Do Not Disturb, No Survey** — checkbox toggle; suppresses survey popups only (logging keeps running, `gaming` tag unaffected) — icon turns red while active, green otherwise
-* **Gaming Mode, No Survey** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
-* Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off or until the app restarts
+* **Do Not Disturb** — checkbox toggle; suppresses survey popups only (logging keeps running, `gaming` tag unaffected) — icon turns red while active, green otherwise
+* **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
+* Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot, relaunch, or update) — nothing persists them across process starts
+* If either mode has been left on for 2+ hours, a reminder popup ("You have been in [mode] for more than 2 hours. Stop?") appears on top of everything — Stop turns the mode off, Ignore dismisses it and re-prompts hourly until you do
 * **Quit Logger**
+
+### Uninstalling
+Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, queued CSVs). Nothing is left behind on the participant's machine.
 
 ### Auto-Update
 The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
