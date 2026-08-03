@@ -15,7 +15,7 @@ _RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 _INSTALLER_ASSET_NAME = "TypeSenseSetup.exe"
 _RELAUNCH_TASK_NAME = "TypeSenseLoggerWatchdog"
 _CHECK_INTERVAL_SEC = 5 * 60
-_MIN_INSTALLER_BYTES = 100_000  # sanity floor so a truncated/HTML error response is never executed as an installer
+_MIN_INSTALLER_BYTES = 100_000
 
 if getattr(sys, "frozen", False):
 	_CONFIG_DIR = Path(sys.executable).parent
@@ -39,28 +39,30 @@ def _log(msg):
 		pass
 
 
-def current_version():
-	"""The installed version, tracked in a file that outlives the exe getting
-	replaced in-place by an update - not the __version__ baked into whichever
-	build happens to be running, which would still say the pre-update number
-	right after an update runs."""
-	if _VERSION_FILE.exists():
-		saved = _VERSION_FILE.read_text().strip()
-		if saved:
-			return saved
-	return __version__
-
-
-def _record_version(tag):
-	_VERSION_FILE.write_text(tag)
-
-
 def _parse_version(v):
 	digits_per_part = [
 		"".join(ch for ch in part if ch.isdigit())
 		for part in v.lstrip("vV").split(".")
 	]
 	return tuple(int(d) if d else 0 for d in digits_per_part)
+
+
+def _record_version(tag):
+	_VERSION_FILE.write_text(tag)
+
+
+def current_version():
+	"""Installed version, tracked in a file that survives the exe being
+	replaced in-place. Self-healing: the file only advances when the baked-in
+	__version__ of the build actually running is newer than what's on record,
+	i.e. proof a real update already succeeded - _check_once() must never
+	write this speculatively before the installer has actually run, or a
+	failed silent install permanently stops the updater from retrying."""
+	saved = _VERSION_FILE.read_text().strip() if _VERSION_FILE.exists() else ""
+	if saved and _parse_version(saved) >= _parse_version(__version__):
+		return saved
+	_record_version(__version__)
+	return __version__
 
 
 def _is_newer(remote_tag, local_version):
@@ -132,7 +134,6 @@ def _check_once():
 		return
 
 	_log(f"updating {local_version} -> {remote_tag}")
-	_record_version(remote_tag)
 	_apply_update(dest)
 
 

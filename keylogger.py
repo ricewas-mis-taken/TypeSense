@@ -36,13 +36,15 @@ def _log_event(msg):
 
 
 def _create_mutex(name):
+	"""Win32 named mutex enforcing a single running instance. Error 183 is
+	ERROR_ALREADY_EXISTS (another instance holds it, so exit immediately);
+	any other failure can't guarantee single-instance, but exiting here would
+	be worse than just logging and continuing with a second process."""
 	kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 	mutex = kernel32.CreateMutexW(None, False, name)
 	if not mutex:
-		# CreateMutexW failed outright (not "already exists") - we can't guarantee
-		# single-instance, but exiting here would be worse than just logging and continuing.
 		_log_event(f"[_create_mutex] CreateMutexW failed, error={ctypes.get_last_error()}")
-	elif ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+	elif ctypes.get_last_error() == 183:
 		os._exit(0)
 	return mutex
 
@@ -333,21 +335,18 @@ def _tray_title():
 	return f"TypeSense - {' + '.join(modes)}" if modes else "TypeSense - Running"
 
 MODE_REMINDER_POLL_MS = 30_000
-MODE_REMINDER_FIRST_SEC = 2 * 60 * 60  # nag once a mode's been on this long
-MODE_REMINDER_REPEAT_SEC = 60 * 60     # then keep nagging hourly if ignored
+MODE_REMINDER_FIRST_SEC = 2 * 60 * 60
+MODE_REMINDER_REPEAT_SEC = 60 * 60
 
 _mode_flags = {"dnd": dnd_enabled, "gaming": gaming_enabled}
 _mode_labels = {"dnd": "Do Not Disturb", "gaming": "Gaming Mode"}
 _mode_other = {"dnd": "gaming", "gaming": "dnd"}
-# None means "not running" / "no reminder pending" - set to a deadline whenever
-# the mode turns on, and cleared whenever it turns off (by any path: tray
-# toggle, restart, or the reminder's own Stop button).
 _mode_next_reminder_at = {"dnd": None, "gaming": None}
 
 def _set_mode(key, enabled):
+	# DND and Gaming Mode are mutually exclusive - turning one on turns the
+	# other off, rather than letting both suppress surveys at once.
 	if enabled:
-		# DND and Gaming Mode are mutually exclusive - turning one on turns
-		# the other off, rather than letting both suppress surveys at once.
 		other = _mode_other[key]
 		if _mode_flags[other].is_set():
 			_mode_flags[other].clear()
@@ -392,14 +391,11 @@ def tray_icon():
 		root.after(0, show_session_id)
 	def show_version_now(icon,item):
 		root.after(0, show_app_version)
+	# Both toggles pause surveys the same way; Gaming Mode additionally tags
+	# logged windows gaming=True so training can exclude gaming typing patterns.
 	def toggle_dnd(icon,item):
-		# Pauses surveys until toggled back off or the app restarts - it's an
-		# in-memory flag, so a restart clears it naturally. Doesn't affect the
-		# `gaming` CSV tag - that's Gaming Mode's job.
 		_set_mode("dnd", not dnd_enabled.is_set())
 	def toggle_gaming(icon,item):
-		# Suppresses surveys like DND, but also tags logged windows with
-		# gaming=True so training can exclude gaming-session typing patterns.
 		_set_mode("gaming", not gaming_enabled.is_set())
 
 	menu = pystray.Menu(
@@ -443,8 +439,10 @@ tray_icon = tray_icon()
 threading.Thread(target=tray_icon.run, daemon=True).start()
 
 SURVEY_POLL_MS = 30_000
-SURVEY_MIN_ACTIVE_WINDOWS = 4  # need real activity in at least this many of the ~80 15s windows in the interval
-SURVEY_RECENCY_SEC = 300  # skip the survey if the last keystroke was this long ago - they're AFK, don't interrupt
+# Gates the popup on genuine engagement: enough active windows in the interval
+# (not just a stray keystroke) and a keystroke recent enough that they're not AFK.
+SURVEY_MIN_ACTIVE_WINDOWS = 4
+SURVEY_RECENCY_SEC = 300
 
 _next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 _last_poll_at = time.time()
