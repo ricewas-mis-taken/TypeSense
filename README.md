@@ -1,7 +1,3 @@
-# ⚠️ IF YOU ARE ON VERSION 1.1.0 or earlier, YOU WILL NOT AUTO-UPDATE TO THE NEWEST VERSION, NOR WILL YOUR DATA BE SENT TO THE SERVER. DOWNLOAD THE LATEST VERSION FROM RELEASES⚠️
-
-
-
 # TypeSense
 ### Passive Desktop Typing Dynamics for Real-Time Mood and Cognitive State Prediction
 
