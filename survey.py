@@ -30,9 +30,6 @@ def show_survey(session_id: str):
 	root.bind("<Unmap>", _block_minimize)
 
 	def _deny_close(event=None):
-		# The red X still shows (it's part of -toolwindow's title bar) but
-		# closing is blocked; beep so it's clear the click registered instead
-		# of silently doing nothing, which read as the window lagging/frozen.
 		winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
 
 	root.protocol("WM_DELETE_WINDOW", _deny_close)

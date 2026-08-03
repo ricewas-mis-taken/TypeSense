@@ -189,7 +189,7 @@ Every 20 minutes a popup appears asking:
 | How stressed are you right now? | 1 (calm) → 7 (very stressed) |
 | How focused are you right now? | 1 (scattered) → 7 (laser focused) |
 | How energized are you right now? | 1 (exhausted) → 7 (fully charged) |
-| What are you mainly doing? | Coding / Writing / Browsing / Studying / Gaming / Other |
+| What are you mainly doing? | Coding / Writing / Browsing / Studying / Gaming |
 
 Survey responses are timestamped and matched to the keystroke windows immediately preceding them during dataset construction.
 
