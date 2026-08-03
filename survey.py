@@ -50,7 +50,7 @@ def show_survey(session_id: str):
 
 	tk.Label(root, text="What are you mainly doing?", font=("Arial", 10)).pack(anchor="w", padx=20, pady=(6,0))
 	activity_var = tk.StringVar (value="Writing")
-	ttk.Combobox(root, textvariable=activity_var, values=["Coding","Gaming", "Browsing","Studying", "Writing", "Other"], state="readonly",width=30).pack(padx=20,pady=4)
+	ttk.Combobox(root, textvariable=activity_var, values=["Coding","Gaming", "Browsing","Studying", "Writing"], state="readonly",width=30).pack(padx=20,pady=4)
 
 
 
