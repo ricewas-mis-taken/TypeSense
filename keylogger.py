@@ -52,8 +52,22 @@ def _create_mutex(name):
 _single_instance_mutex = _create_mutex("Global\\TypeSenseLogger_SingleInstance_Mutex")
 
 
+def _running_packaged():
+	"""True for an MSIX/Desktop Bridge install. Confirmed by testing: a
+	packaged full-trust process's own HKCU\\...\\Run write silently does not
+	register real autostart (no error, but the key is never actually updated) -
+	so there's no point attempting it there. WindowsApps is where every MSIX
+	package's per-user install lands; nothing else installs there."""
+	return "\\WindowsApps\\" in sys.executable
+
+
 def ensure_autostart():
 	if not getattr(sys, "frozen", False):
+		return
+	if _running_packaged():
+		# AppxManifest.xml's uap5:StartupTask (Enabled="true") handles this
+		# instead - Windows registers it for real the first time the packaged
+		# app launches, no runtime API call needed on this side.
 		return
 	exe_path = sys.executable
 	run_key = r"Software\Microsoft\Windows\CurrentVersion\Run"

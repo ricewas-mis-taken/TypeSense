@@ -98,24 +98,39 @@ CERTIFICATION / CAPABILITY FLAGS (the actual point of concern)
        arguably personal/research data) — Partner Center requires this at
        submission regardless of the keylogging question.
 
-3. Autostart mechanism mismatch: the app registers autostart itself at
-   runtime (keylogger.py's ensure_autostart() writes an HKCU Run key;
-   ensure_relaunch_task() creates a schtasks.exe watchdog task) rather than
-   via the MSIX-native `windows.startupTask` extension. This isn't a hard
-   certification blocker for a runFullTrust package, but:
-     - It's less transparent to the end user than a declared startup task,
-       which surfaces in Settings > Apps > Startup and Task Manager's Startup
-       tab with a visible on/off toggle — reviewers may ask why a packaged
-       app is silently writing to the Run key instead of using the
-       standard mechanism.
-     - This notes file flags it; no code changes were made here since the
-       ask was to wrap the existing exe, not rewrite it.
+3. Autostart via a raw HKCU Run key write is CONFIRMED BROKEN when packaged
+   — this was tested, not theoretical. keylogger.py's ensure_autostart() ran
+   with no error, but the real Run key was never updated (the scheduled
+   watchdog task, created via schtasks.exe as an external process, registered
+   correctly and was unaffected — only the direct winreg.SetValueEx() call
+   silently no-ops for a full-trust packaged process). Fixed by:
+     - Declaring `desktop:Extension Category="windows.startupTask"` with
+       `desktop:StartupTask Enabled="true"` in AppxManifest.xml. Note this
+       must be the `desktop:` namespace variant with explicit `Executable`/
+       `EntryPoint` attributes on the Extension element — the newer `uap5:`
+       variant (where those attributes are optional) was tried first and
+       silently never registered; `desktop:` is what real MSIX tooling
+       (Advanced Installer) generates for a converted full-trust Win32 app,
+       and is confirmed working here (verified live in Task Manager's
+       Startup apps tab after install + first launch, no code change needed
+       on the app side since Enabled="true" skips the RequestEnableAsync
+       runtime API call entirely).
+     - keylogger.py's ensure_autostart() now detects a packaged install
+       (`_running_packaged()`, checking for `\WindowsApps\` in sys.executable)
+       and skips the HKCU Run key write entirely in that case, since it's a
+       confirmed no-op there and misleading to leave in silently. The
+       schtasks.exe watchdog registration is untouched — it works fine
+       packaged or not.
+   Verification note: Task Manager's Startup apps list doesn't always
+   refresh mid-session for a newly-registered packaged startup task; if it's
+   not there right after install, restart explorer.exe or log off/on before
+   concluding it's broken.
 
 4. Single-instance mutex uses the `Global\` kernel object namespace
-   (Global\TypeSenseLogger_SingleInstance_Mutex in keylogger.py). Full-trust
-   packaged apps aren't sandboxed the way UWP is, so this should keep working
-   unchanged — flagging only as a "verify it actually works" item once you
-   have a signed package to test with, not a known-broken thing.
+   (Global\TypeSenseLogger_SingleInstance_Mutex in keylogger.py). Confirmed
+   working packaged: launching the MSIX build while the unpackaged exe (or
+   another instance) already holds the mutex causes the second one to detect
+   ERROR_ALREADY_EXISTS and exit immediately, same as unpackaged.
 
 5. `internetClient` (not `internetClientServer` or `privateNetworkClientServer`)
    is the correct, minimal capability for this app's use case — it only makes
