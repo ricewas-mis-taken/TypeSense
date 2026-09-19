@@ -110,7 +110,7 @@ If the participant loses internet connection, all data is saved locally in an of
 * **Modifier keys excluded from flight time** — shift, ctrl, alt, arrow, function keys create artificially short flight times (microseconds) and are filtered out
 * **Dwell time capped at 300ms** — held keys (backspace held to delete, shift held for capitals) are excluded to prevent skewing averages
 * **Burst threshold: 200ms** — gaps longer than 200ms between keypresses mark a burst boundary
-* **Minimum keystroke count per window** — windows with too few keystrokes (fewer than 8) are dropped as low-confidence, since sparse windows produce noisy statistics
+* **Minimum keystroke count per window** — windows with too few keystrokes (fewer than 15) are dropped as low-confidence, since sparse windows produce noisy statistics
 * **Suspect/gamed windows filtered at compile time** — `data_comp.py`'s `is_suspect_window()` flags windows with implausible numeric patterns (e.g. suspiciously uniform dwell/flight times) so they're excluded from `training_ALL.csv` by default
 * **Zero key content stored** — every key maps to one of 12 categories (alpha, digit, space, backspace, etc.). The log file cannot reconstruct what anyone typed even if stolen
 
@@ -192,6 +192,8 @@ Every 20 minutes a popup appears asking:
 | What are you mainly doing? | Coding / Writing / Browsing / Studying / Gaming |
 
 Survey responses are timestamped and matched to the keystroke windows immediately preceding them during dataset construction.
+
+The survey window can't be minimized or closed — it can only be dismissed by clicking Submit. This is by design, for data completeness: closing/Escape/Alt+F4 all just beep instead of dismissing it, and Win+Down/the system menu are caught and immediately reopened if they minimize it.
 
 ---
 
