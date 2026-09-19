@@ -1,0 +1,114 @@
+lucastang.dev/TypeSense — what's stale vs. the current code (v1.3.1, branch fix/updater-version-recording)
+Site content pulled live on 2026-09-17. Compared against keylogger.py / survey.py / README.md as they exist now.
+
+================================================================================
+CRITICAL — WRONG, NOT JUST OUTDATED
+================================================================================
+
+1. "If you close the window without submitting, that check-in is skipped —
+   no worries." — THIS IS FALSE.
+   survey.py's WM_DELETE_WINDOW/Escape/Alt+F4 are all bound to _deny_close(),
+   which just beeps and does NOT close the window. The survey cannot be
+   skipped by closing it — that was explicitly hardened this session
+   (originally issue #26: "survey should not be closeable/minimizable").
+   A participant who reads this line and tries to close the survey to move
+   on will get stuck beeping at a window that won't go away, with the site
+   telling them that's not supposed to happen. Fix this line immediately —
+   it's actively misleading about the study's own data-completeness design.
+
+2. "You can also press ESC at any time to exit immediately." — THIS IS
+   FALSE for the survey, and there is no such global "ESC quits the app"
+   behavior anywhere in keylogger.py either.
+   Inside the survey popup, Escape is bound to the same _deny_close() beep
+   as the close button — it does not exit anything. There is no code path
+   where pressing ESC quits TypeSenseLogger. This line needs to be removed
+   or corrected; as written it tells participants a way to bail on the
+   study that doesn't exist.
+
+================================================================================
+MISSING — REAL FEATURES THE SITE DOESN'T MENTION AT ALL
+================================================================================
+
+3. Do Not Disturb and Gaming Mode tray toggles.
+   Current tray menu (keylogger.py, pystray.Menu): Show ID, Show Version,
+   Show Survey Now, Do Not Disturb, Gaming Mode, Quit Logger.
+   The site's tray section only lists "Show Survey Now" and "Quit Logger".
+   Participants have no idea they can pause surveys during something like
+   gaming or focused work. Worth a short paragraph: what each toggle does,
+   that they're mutually exclusive (turning one on turns the other off),
+   that both reset to off automatically on restart, and that Gaming Mode
+   additionally tags that period's data so it can be excluded from training
+   (participants should know their gaming sessions are being flagged, not
+   silently mixed into the same data as everything else — this is also an
+   IRB-relevant disclosure, not just a UX note).
+
+4. The 2-hour mode reminder popup.
+   If DND or Gaming Mode is left on for 2+ hours, a popup appears:
+   "You have been in DND for more than 2 hours. Stop?" with, green "Stop"
+   /red "Ignore" buttons. Unlike the survey, this one CAN be closed (closing
+   = Ignore, re-prompts hourly). Not documented anywhere on the site —
+   participants will be confused the first time they see it appear
+   out of nowhere.
+
+5. "Show ID" and "Show Version" tray options.
+   The site only describes the ID popup appearing once on first run. It
+   doesn't mention participants can re-check their ID anytime via
+   right-click → Show ID, which is the more useful thing to tell someone
+   who lost their screenshot. "Show Version" isn't mentioned either
+   (minor, but relevant if you ever ask participants to confirm they're on
+   a given build).
+
+6. Icon color coding.
+   _tray_icon_image() turns the tray dot red when either DND or Gaming Mode
+   is active, green otherwise. Not mentioned — ties into item 3.
+
+7. Uninstalling.
+   The site has no uninstall section at all. Since 1.3.0, uninstalling via
+   Windows "Apps & Features" fully removes the scheduled watchdog task, the
+   autostart registry key, and the entire %LOCALAPPDATA%\TypeSense data
+   directory — nothing is left behind. Worth a short paragraph so
+   participants who ask "how do I fully remove this" don't have to be
+   walked through it manually (this used to require manual steps before
+   the cleanup work landed).
+
+8. Auto-update.
+   Not mentioned anywhere. Worth at least a one-line note that the app
+   checks for updates every 5 minutes and silently updates itself — so
+   participants aren't alarmed if the tray icon briefly disappears/restarts
+   on its own after a new version ships.
+
+================================================================================
+LOWER PRIORITY / POLISH
+================================================================================
+
+9. Survey activity options.
+   Site's mock check-in shows "Activity: Writing" as an example but doesn't
+   list the actual choices. Current list (survey.py): Coding, Gaming,
+   Browsing, Studying, Writing. ("Other" was considered and deliberately
+   left out — don't add it back here either.)
+
+10. Survey gating.
+    The site implies a survey fires like clockwork every 20 minutes. In
+    reality (keylogger.py _should_show_survey) it also requires at least 4
+    of the ~80 fifteen-second windows in that interval to show real
+    activity, AND a keystroke within the last 5 minutes — otherwise it's
+    skipped so an AFK participant isn't interrupted. Not essential to
+    disclose in detail, but "you may not get one every single 20 minutes if
+    you've stepped away" would set better expectations than implying a
+    strict timer.
+
+11. Version number / build reference.
+    Consider adding the current version (1.3.1, pending release) somewhere
+    on the page so participants can cross-check via "Show Version" that
+    they're on the build the guide describes — useful once multiple
+    versions are in the wild across participants who installed at
+    different times.
+
+================================================================================
+NOT ON THIS SITE, DOUBLE-CHECK ELSEWHERE
+================================================================================
+
+- The IRB protocol document fact-checked earlier in this project should be
+  re-diffed against the same list above (items 1, 2, and 3 in particular —
+  a protocol that also claims "closing skips the survey" would need
+  correcting in two places, not one).
