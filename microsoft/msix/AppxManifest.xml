@@ -14,7 +14,7 @@
     not upload at all.
   -->
   <Identity
-    Name="REPLACE_WITH_PARTNER_CENTER_PACKAGE_NAME"
+    Name="ReplaceWithPartnerCenterPackageName"
     Publisher="CN=REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID"
     Version="1.3.1.0"
     ProcessorArchitecture="x64" />
