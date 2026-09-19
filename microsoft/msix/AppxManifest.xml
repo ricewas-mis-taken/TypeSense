@@ -6,12 +6,10 @@
   IgnorableNamespaces="uap rescap">
 
   <!--
-    Identity: both fields below MUST be replaced with the exact values Partner
-    Center assigns after you reserve the app name and register as a publisher.
-      Name       -> "Package/Identity Name" on the app's Partner Center "App identity" page.
-      Publisher  -> the "Publisher ID" string, always in the form CN=<guid>.
-    A mismatch on either one fails ingestion, not just certification - it will
-    not upload at all.
+    Identity values below are from Partner Center's "App identity" page
+    (Package/Identity/Name, Package/Identity/Publisher). If the app is ever
+    re-reserved under a different name/publisher account, these must be
+    updated to match exactly - a mismatch fails ingestion outright.
   -->
   <Identity
     Name="LucasTang.TypeSense"

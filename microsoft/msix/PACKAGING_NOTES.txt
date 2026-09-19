@@ -10,7 +10,11 @@ MSIX container, not a converted/sandboxed UWP app. Nothing about how the app
 runs changes; MSIX here is purely a distribution/installer format.
 
 Files in this folder:
-  AppxManifest.xml   - the package manifest (placeholders marked REPLACE_WITH_*)
+  AppxManifest.xml   - the package manifest. Identity/Publisher/PublisherDisplayName
+                        are filled in with the real values from Partner Center's
+                        "App identity" page (Name=LucasTang.TypeSense). If the app
+                        is ever re-reserved under a different name/account, these
+                        three values need to be updated to match exactly.
   Assets\            - placeholder tile icons (44x44, 150x150, 50x50) — swap
                         these for real branded assets before submitting;
                         Store review will reject programmer-art placeholders.
@@ -25,11 +29,9 @@ HOW TO BUILD (makeappx.exe path — no Visual Studio)
    https://developer.microsoft.com/windows/downloads/windows-sdk/ and select
    just "Windows App Certification Kit" (this pulls in makeappx.exe/signtool.exe).
 2. From the repo root, rebuild the exe if it's stale: .\build.bat
-3. Fill in AppxManifest.xml's three REPLACE_WITH_PARTNER_CENTER_* fields (see
-   below for where those values come from).
-4. Run: powershell -File microsoft\msix\build_msix.ps1
+3. Run: powershell -File microsoft\msix\build_msix.ps1
    This produces microsoft\msix\dist\TypeSense.msix (unsigned).
-5. To sideload-test locally: get a code-signing cert whose Subject exactly
+4. To sideload-test locally: get a code-signing cert whose Subject exactly
    matches the manifest's Publisher (CN=...), then:
      signtool sign /fd SHA256 /a /f cert.pfx /p <password> TypeSense.msix
      Add-AppxPackage -Path TypeSense.msix
