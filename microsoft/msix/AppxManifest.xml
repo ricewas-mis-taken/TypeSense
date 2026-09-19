@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <!--
+    Identity: both fields below MUST be replaced with the exact values Partner
+    Center assigns after you reserve the app name and register as a publisher.
+      Name       -> "Package/Identity Name" on the app's Partner Center "App identity" page.
+      Publisher  -> the "Publisher ID" string, always in the form CN=<guid>.
+    A mismatch on either one fails ingestion, not just certification - it will
+    not upload at all.
+  -->
+  <Identity
+    Name="REPLACE_WITH_PARTNER_CENTER_PACKAGE_NAME"
+    Publisher="CN=REPLACE_WITH_PARTNER_CENTER_PUBLISHER_ID"
+    Version="1.3.1.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>TypeSense</DisplayName>
+    <PublisherDisplayName>REPLACE_WITH_PARTNER_CENTER_PUBLISHER_DISPLAY_NAME</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="TypeSenseLogger" Executable="TypeSenseLogger.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="TypeSense"
+        Description="Passive keystroke-timing research logger for an IRB-reviewed study. Records only a category number per keystroke (never key content), computes timing statistics every 15 seconds, and sends them to the study's research server. Runs from the system tray; periodically prompts a short mood check-in."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Outbound HTTPS to the research server (user_send.py / updater.py). -->
+    <Capability Name="internetClient" />
+    <!--
+      runFullTrust is what actually matters here, and it's the whole story:
+      this is a Desktop Bridge (Win32-in-MSIX) app, not a sandboxed UWP app,
+      so it runs with the same Win32 API access as the unpackaged exe already
+      has today - including pynput's SetWindowsHookEx-based global keyboard
+      hook, winreg (autostart registry key), and schtasks.exe (watchdog
+      scheduled task). There is no separate manifest capability that gates a
+      global keyboard hook specifically; runFullTrust is the on/off switch
+      for all of it at once. See PACKAGING_NOTES.txt for what this means for
+      Store certification.
+    -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

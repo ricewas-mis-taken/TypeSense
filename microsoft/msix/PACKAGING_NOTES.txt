@@ -1,0 +1,121 @@
+TypeSense — MSIX packaging notes
+=================================
+
+WHAT THIS PACKAGES
+-------------------
+This wraps the existing PyInstaller output (dist\TypeSenseLogger\*, i.e.
+TypeSenseLogger.exe + its _internal\ dependencies) plus config.json into an
+MSIX using the "Desktop Bridge" model — a full-trust Win32 app carried in an
+MSIX container, not a converted/sandboxed UWP app. Nothing about how the app
+runs changes; MSIX here is purely a distribution/installer format.
+
+Files in this folder:
+  AppxManifest.xml   - the package manifest (placeholders marked REPLACE_WITH_*)
+  Assets\            - placeholder tile icons (44x44, 150x150, 50x50) — swap
+                        these for real branded assets before submitting;
+                        Store review will reject programmer-art placeholders.
+  build_msix.ps1      - packs the above into microsoft\msix\dist\TypeSense.msix
+                        via makeappx.exe
+
+HOW TO BUILD (makeappx.exe path — no Visual Studio)
+-----------------------------------------------------
+1. Install the Windows SDK's MSIX Packaging Tools component only:
+     winget install Microsoft.WindowsSDK
+   or download the standalone SDK installer from
+   https://developer.microsoft.com/windows/downloads/windows-sdk/ and select
+   just "Windows App Certification Kit" (this pulls in makeappx.exe/signtool.exe).
+2. From the repo root, rebuild the exe if it's stale: .\build.bat
+3. Fill in AppxManifest.xml's three REPLACE_WITH_PARTNER_CENTER_* fields (see
+   below for where those values come from).
+4. Run: powershell -File microsoft\msix\build_msix.ps1
+   This produces microsoft\msix\dist\TypeSense.msix (unsigned).
+5. To sideload-test locally: get a code-signing cert whose Subject exactly
+   matches the manifest's Publisher (CN=...), then:
+     signtool sign /fd SHA256 /a /f cert.pfx /p <password> TypeSense.msix
+     Add-AppxPackage -Path TypeSense.msix
+   A self-signed test cert works for local sideloading (Add-AppxPackage) as
+   long as it's trusted on the test machine; it does NOT need to be a real
+   CA-issued cert for that step. Partner Center re-signs properly on ingestion
+   regardless of how (or whether) you signed it locally.
+
+ALTERNATIVE: MSIX Packaging Tool (GUI)
+-----------------------------------------
+If you'd rather not hand-maintain a manifest, install "MSIX Packaging Tool"
+from the Microsoft Store and use its "Application Package" conversion wizard
+pointed at installer\TypeSenseSetup.exe (the existing Inno Setup installer)
+instead of the raw exe. It runs the installer in a monitored VM/sandbox,
+observes what it does (files written, registry keys, the autostart entry),
+and generates a manifest from that automatically — which has the advantage of
+actually capturing the HKCU Run key write and file layout instead of you
+transcribing it by hand. You'd still need to review the generated manifest for
+the runFullTrust capability and the same certification concerns below; the
+tool doesn't decide those for you. It won't capture the schtasks.exe watchdog
+task registration, since that happens from app code at runtime, not at
+install time — same caveat as the manual path.
+
+WHERE PARTNER CENTER VALUES COME FROM
+----------------------------------------
+- Register as a Partner Center developer (one-time, has a fee).
+- Reserve the app name ("TypeSense" or a variant if taken) — Partner Center
+  then shows you the exact package Identity Name to paste into the manifest.
+- Your account's Publisher ID (CN=<guid>) is shown on the same
+  "App identity" page — it's account-wide, not per-app.
+- PublisherDisplayName must match your registered publisher display name
+  exactly (also shown on that page).
+
+CERTIFICATION / CAPABILITY FLAGS (the actual point of concern)
+------------------------------------------------------------------
+1. There is no manifest capability that specifically gates a global keyboard
+   hook. SetWindowsHookEx (which pynput's Listener uses under the hood) is a
+   plain Win32 API call. Because this package declares runFullTrust, the app
+   runs unsandboxed with full Win32 API access — identical to the unpackaged
+   exe today. runFullTrust is the entire "on switch" for the hook, autostart
+   registry write, and schtasks.exe call alike; you cannot grant one without
+   the others via the manifest.
+
+2. The real risk is Store POLICY, not the manifest. Microsoft Store
+   certification (Store Policy 10 - Security, and the general prohibition on
+   apps that "log keystrokes... without the user's knowledge") applies
+   regardless of how honestly the manifest is written. Automated and human
+   review both pattern-match on "this app hooks the keyboard" and a consumer-
+   facing Store listing for that is a common, likely outright rejection or at
+   minimum a manual review escalation — even with consent flows, an IRB
+   protocol, and category-only (not content) capture. Before investing in
+   packaging:
+     - Consider whether this specific app is realistically a Microsoft Store
+       target at all, versus direct sideload distribution (which is what the
+       Inno Setup installer + browser download flow already does, and what
+       your participant guide at lucastang.dev/TypeSense currently assumes).
+     - If you do submit, the app description, screenshots, and privacy policy
+       need to foreground "keystroke TIMING research tool, category-only,
+       zero content capture, IRB-reviewed" up front — burying that disclosure
+       reads worse to a reviewer than a straightforward malware pattern-match
+       false-positive.
+     - A privacy policy URL is mandatory for any app requesting network
+       capability + handling of any personal data (your participant ID is
+       arguably personal/research data) — Partner Center requires this at
+       submission regardless of the keylogging question.
+
+3. Autostart mechanism mismatch: the app registers autostart itself at
+   runtime (keylogger.py's ensure_autostart() writes an HKCU Run key;
+   ensure_relaunch_task() creates a schtasks.exe watchdog task) rather than
+   via the MSIX-native `windows.startupTask` extension. This isn't a hard
+   certification blocker for a runFullTrust package, but:
+     - It's less transparent to the end user than a declared startup task,
+       which surfaces in Settings > Apps > Startup and Task Manager's Startup
+       tab with a visible on/off toggle — reviewers may ask why a packaged
+       app is silently writing to the Run key instead of using the
+       standard mechanism.
+     - This notes file flags it; no code changes were made here since the
+       ask was to wrap the existing exe, not rewrite it.
+
+4. Single-instance mutex uses the `Global\` kernel object namespace
+   (Global\TypeSenseLogger_SingleInstance_Mutex in keylogger.py). Full-trust
+   packaged apps aren't sandboxed the way UWP is, so this should keep working
+   unchanged — flagging only as a "verify it actually works" item once you
+   have a signed package to test with, not a known-broken thing.
+
+5. `internetClient` (not `internetClientServer` or `privateNetworkClientServer`)
+   is the correct, minimal capability for this app's use case — it only makes
+   outbound HTTPS calls (user_send.py, updater.py) and never listens for
+   inbound connections. Don't broaden it without a reason.
