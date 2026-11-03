@@ -25,7 +25,7 @@ abc12345, 1712938400000, press, 0, ""
 abc12345, 1712938400087, release, 0, 87000000
 ```
 
-A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
+This raw log **stays on the participant's PC** — it is never uploaded. Only the computed 15-second feature rows (timing statistics and category rates, no key content) are sent to the server. A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
 
 ---
 
@@ -87,6 +87,24 @@ If the participant loses internet connection, all data is saved locally in an of
 
 ## Features Computed (Every 15-Second Window)
 
+**Schema v2.0 (app version 2.0.0).** Each uploaded window row has 47 columns: 7 metadata columns (`schema_version`, `session`, `boot_id`, `wall_start_utc`, `ts_ns_start`, `gaming_flag`, `n_keydowns`), the 11 legacy v1 features below (unchanged), and 29 new features computed by `features_v2.py`. All column lists live in `schema.py`. Windows with fewer than 5 keydowns produce no v2 row.
+
+**The 29 new features** (times in ms; a *flight* is the gap between consecutive keydowns inside one window):
+
+| Group | Features |
+|---|---|
+| Core timing | `avg_dwell_raw`, `sd_dwell`, `avg_flight_raw`, `sd_flight`, `cv_flight`, `pause_rate`, `avg_pause`, `backspace_rate`, `enter_rate`, `shift_rate`, `arrow_rate`, `punct_rate`, `keys_per_min` |
+| Timing shape | `median_dwell`, `median_flight`, `p10_flight`, `p90_flight`, `flight_autocorr`, `rollover_rate` |
+| Pauses and bursts | `long_pause_rate`, `max_pause`, `idle_frac`, `burst_count`, `avg_burst_len` |
+| Corrections | `backspace_run_rate` |
+| Key mix | `digit_rate`, `space_rate`, `ctrl_rate`, `alt_rate` |
+
+`avg_dwell_raw` / `avg_flight_raw` are unfiltered means; the legacy `avg_dwell` / `avg_flight` below keep their v1 meaning (10-300 ms filter).
+
+**Boot-proof timestamps.** `perf_counter_ns` restarts every boot, so the logger also writes `anchors_<session>.csv` (`boot_id, perf_ns, wall_utc_ns`) at startup and every 60 s. `align.py` uses it to map raw `ts_ns` values to UTC. Window and survey rows carry `boot_id` and `wall_start_utc`.
+
+**Legacy v1 features (still computed and uploaded):**
+
 | Feature | Description | Why It Matters |
 |---|---|---|
 | `avg_dwell_ms` | Mean key hold duration | Rises with fatigue and stress |
@@ -146,6 +164,7 @@ Right-click the tray icon for:
 * **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
 * Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot, relaunch, or update) — nothing persists them across process starts
 * If either mode has been left on for 2+ hours, a reminder popup ("You have been in [mode] for more than 2 hours. Stop?") appears on top of everything — Stop turns the mode off, Ignore dismisses it and re-prompts hourly until you do
+* **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log (the folder path is also shown under Show Version)
 * **Quit Logger**
 
 ### Uninstalling
@@ -164,6 +183,10 @@ keystroke-research/
 ├── survey.py                # Client — EMA popup window (tkinter)
 ├── user_send.py             # Client — server communication + offline queue
 ├── updater.py                # Client — background auto-updater (GitHub Releases)
+├── features_v2.py             # Pure 29-feature extractor for one window (unit-tested)
+├── schema.py                  # Single source of truth for column lists (logger, client, server, data_comp.py)
+├── align.py                   # Anchors file writer + raw ts_ns to UTC mapping
+├── tests/                     # pytest tests for the above
 ├── app_paths.py               # Client — resolves the per-user app data directory
 ├── version.py                  # Compiled-in fallback version (superseded post-install by the tracked version file)
 ├── data_comp.py                 # Offline — joins keystroke windows + surveys, filters suspect windows, builds training_ALL.csv
@@ -216,6 +239,7 @@ This project builds on and extends:
 ## Ethical Considerations
 
 * Zero key content captured — timing and category only
+* The raw per-event log stays on the participant's PC and is never uploaded; only computed feature rows are
 * Data stored on researcher-controlled server, never third-party cloud
 * Participant IDs are random session UUIDs, not names
 * Participants can withdraw at any time and request data deletion
