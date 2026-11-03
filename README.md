@@ -67,7 +67,7 @@ Participant types normally on their computer
         ↓
 keylogger.py captures timing events (not key content — zero content stored)
         ↓
-Every 15 seconds: compute dwell time, flight time, burst length
+Every 15 seconds: compute 40 timing and key-mix features (dwell, flight, pauses, bursts, rhythm, corrections)
         ↓
 Features sent as JSON to research server via HTTPS
         ↓ (in parallel)
@@ -124,9 +124,9 @@ If the participant loses internet connection, all data is saved locally in an of
 * **Modifier keys excluded from flight time** — shift, ctrl, alt, arrow, function keys create artificially short flight times (microseconds) and are filtered out
 * **Dwell time capped at 300ms** — held keys (backspace held to delete, shift held for capitals) are excluded to prevent skewing averages
 * **Burst threshold: 200ms** — gaps longer than 200ms between keypresses mark a burst boundary
-* **Minimum keystroke count per window** — windows with too few keystrokes (fewer than 15) are dropped as low-confidence, since sparse windows produce noisy statistics
+* **Minimum keystroke count per window** — windows with too few keystrokes (fewer than 15 releases, and in v2 fewer than 5 keydowns) are dropped as low-confidence, since sparse windows produce noisy statistics
 * **Suspect/gamed windows filtered at compile time** — `data_comp.py`'s `is_suspect_window()` flags windows with implausible numeric patterns (e.g. suspiciously uniform dwell/flight times) so they're excluded from `training_ALL.csv` by default
-* **Zero key content stored** — every key maps to one of 12 categories (alpha, digit, space, backspace, etc.). The log file cannot reconstruct what anyone typed even if stolen
+* **Zero key content stored** — every key maps to one of 13 categories, codes 0-12 (alpha, digit, space, backspace, etc.). The log file cannot reconstruct what anyone typed even if stolen
 
 ---
 
@@ -168,7 +168,7 @@ Right-click the tray icon for:
 * **Quit Logger**
 
 ### Uninstalling
-Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, queued CSVs). Nothing is left behind on the participant's machine.
+Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the rest of the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, offline queue). The one exception is the raw typing log folder `%LOCALAPPDATA%\TypeSense\simple_data`, which is deliberately **kept** so raw data survives an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
 
 ### Auto-Update
 The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
