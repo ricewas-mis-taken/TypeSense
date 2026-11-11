@@ -5,7 +5,7 @@
 
 ## DISCLAIMER
 
-**THIS LOGGER CAPTURES ZERO CONTENT.** Every key is mapped to a category number:
+**THIS LOGGER CAPTURES ZERO CONTENT.** Every key is mapped to a category number::
 
 ```
 0 = alpha (a-z)        6 = ctrl
