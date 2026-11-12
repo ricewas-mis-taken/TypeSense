@@ -1,4 +1,4 @@
-import csv, time, uuid
+import csv, time, uuid, statistics
 from pathlib import Path
 from pynput.keyboard import Key, Listener
 import user_send
@@ -136,6 +136,17 @@ def categorize(key):
 # to trust - both for the CSV row and for counting the window as "active" below.
 MIN_KEYSTROKES_PER_WINDOW = 15
 
+WINDOW_COLUMNS = [
+	"session", "time_now", "total_press", "total_release",
+	"avg_dwell", "sd_dwell", "median_dwell", "iqr_dwell", "shortest_dwell", "longest_dwell",
+	"avg_flight", "sd_flight", "cv_flight", "median_flight", "iqr_flight", "shortest_flight", "longest_flight",
+	"pause_rate", "avg_pause", "max_pause",
+	"avg_burst", "max_burst", "num_bursts",
+	"backspace_rate", "correction_burst_max", "total_corrections",
+	"enter_rate", "shift_rate", "arrow_rate", "punct_rate", "digit_rate", "space_rate",
+	"keys_per_min", "gaming",
+]
+
 class Simplekeylog:
 	def __init__(self, out_dir = None, window_sec = 15):
 		self.session_id = self._load_or_create_session_id()
@@ -144,6 +155,8 @@ class Simplekeylog:
 
 		self.log_file = self.out_dir / f"keyrecsimp_{self.session_id}.csv"
 		self.window_file = self.out_dir / f"importantsimp_{self.session_id}.csv"
+
+		self._rotate_stale_window_file()
 
 		kf_is_new = not self.log_file.exists()
 		ff_is_new = not self.window_file.exists()
@@ -157,8 +170,7 @@ class Simplekeylog:
 		if kf_is_new:
 			self._kw.writerow(["session","ts_ns","event", "cat", "dwell_time"])
 		if ff_is_new:
-			self._ff.writerow(["session","time_now", "total_press", "total_release", "avg_dwell", "shortest_dwell", "longest_dwell",
-							   "avg_flight", "shortest_flight", "longest_flight", "avg_burst","max_burst","num_bursts","gaming"])
+			self._ff.writerow(WINDOW_COLUMNS)
 
 		self.events = []
 		self.all_dwell = []
@@ -178,6 +190,30 @@ class Simplekeylog:
 
 		self.active_window_count = 0
 		self.last_keystroke_ts = None
+
+	def _rotate_stale_window_file(self):
+		"""The window CSV schema changed in 2.0.0. Appending new-schema rows to an
+		old-schema file would misalign columns, so a mismatched header means the
+		old file is renamed to *_v1.csv (never overwritten) and a fresh one starts."""
+		if not self.window_file.exists():
+			return
+		try:
+			with open(self.window_file, "r", newline='', encoding="utf-8") as f:
+				header = next(csv.reader(f), [])
+		except Exception as e:
+			_log_event(f"[rotate] could not read window file header: {e!r}")
+			return
+		if header == WINDOW_COLUMNS:
+			return
+		if not header:
+			return  # empty file; the header gets written normally
+		target = self.window_file.with_name(self.window_file.stem + "_v1.csv")
+		n = 1
+		while target.exists():
+			n += 1
+			target = self.window_file.with_name(f"{self.window_file.stem}_v1_{n}.csv")
+		os.replace(self.window_file, target)
+		_log_event(f"[rotate] old-schema window file moved to {target.name}")
 
 	def _load_or_create_session_id(self):
 		id_file = get_app_data_dir() / "participant_id.txt"
@@ -217,15 +253,53 @@ class Simplekeylog:
 		burst_lens.append(current_burst)
 		return burst_lens
 
+	@staticmethod
+	def _spread(valid_ms):
+		"""(sd, median, iqr) of a list of ms values; -1s when too few samples."""
+		if len(valid_ms) < 2:
+			med = round(valid_ms[0], 3) if valid_ms else -1
+			return -1, med, -1
+		sd = round(statistics.stdev(valid_ms), 3)
+		med = round(statistics.median(valid_ms), 3)
+		if len(valid_ms) < 4:
+			return sd, med, -1
+		q = statistics.quantiles(valid_ms, n=4)
+		return sd, med, round(q[2] - q[0], 3)
+
+	@staticmethod
+	def _valid_ms(values):
+		return [v / 1e6 for v in values if 10_000_000 < v < 300_000_000]
+
 	def _write_window_row(self, now):
 
 		avg_d, min_d, max_d = self._jarvis(self.all_dwell)
 		avg_f, min_f, max_f = self._jarvis(self.all_flight)
+		sd_d, med_d, iqr_d = self._spread(self._valid_ms(self.all_dwell))
+		sd_f, med_f, iqr_f = self._spread(self._valid_ms(self.all_flight))
+		cv_f = round(sd_f / avg_f, 3) if sd_f >= 0 and avg_f > 0 else -1
+
+		flights = [f for f in self.all_flight if f > 0]
+		pauses = [f / 1e6 for f in flights if f > 200_000_000]
+		pause_rate = round(len(pauses) / len(flights), 4) if flights else 0
+		avg_pause = round(sum(pauses) / len(pauses), 3) if pauses else -1
+		max_pause = round(max(pauses), 3) if pauses else -1
+
 		burst_lens = self._compute_burst()
 		avg_burst = round(sum(burst_lens) / len(burst_lens), 2)
 		max_burst = max(burst_lens)
 		num_burst = len(burst_lens)
 
+		press_cats = [e[2] for e in self.events if e[0] == "press"]
+		n_press = len(press_cats)
+		def rate(cat):
+			return round(press_cats.count(cat) / n_press, 4) if n_press else 0
+		total_corr = press_cats.count(3)
+		run = max_run = 0
+		for c in press_cats:
+			run = run + 1 if c == 3 else 0
+			max_run = max(max_run, run)
+		elapsed_min = (now - self.window_start_ns) / 60e9
+		keys_per_min = round(n_press / elapsed_min, 2) if elapsed_min > 0 else 0
 
 		row = {
 			"session": self.session_id,
@@ -233,16 +307,37 @@ class Simplekeylog:
 			"total_press": self.total_press,
 			"total_release": self.total_release,
 			"avg_dwell": avg_d,
+			"sd_dwell": sd_d,
+			"median_dwell": med_d,
+			"iqr_dwell": iqr_d,
 			"shortest_dwell": min_d,
 			"longest_dwell": max_d,
 			"avg_flight": avg_f,
+			"sd_flight": sd_f,
+			"cv_flight": cv_f,
+			"median_flight": med_f,
+			"iqr_flight": iqr_f,
 			"shortest_flight": min_f,
 			"longest_flight": max_f,
+			"pause_rate": pause_rate,
+			"avg_pause": avg_pause,
+			"max_pause": max_pause,
 			"avg_burst": avg_burst,
 			"max_burst": max_burst,
 			"num_bursts": num_burst,
+			"backspace_rate": rate(3),
+			"correction_burst_max": max_run,
+			"total_corrections": total_corr,
+			"enter_rate": rate(4),
+			"shift_rate": rate(5),
+			"arrow_rate": rate(8),
+			"punct_rate": rate(12),
+			"digit_rate": rate(1),
+			"space_rate": rate(2),
+			"keys_per_min": keys_per_min,
 			"gaming": gaming_enabled.is_set(),
 		}
+		assert list(row) == WINDOW_COLUMNS
 
 		self._ff.writerow(list(row.values()))
 		self._ff_file.flush()
