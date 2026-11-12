@@ -513,6 +513,7 @@ def tray_icon():
 		pystray.MenuItem("Show Survey Now", show_survey_now),
 		pystray.MenuItem("Do Not Disturb", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
 		pystray.MenuItem("Gaming Mode", toggle_gaming, checked=lambda item: gaming_enabled.is_set()),
+		pystray.MenuItem("Open Raw Data Folder", open_raw_folder),
 		pystray.MenuItem("Quit Logger", quit_app)
 	)
 	icon = pystray.Icon(
