@@ -498,6 +498,13 @@ def tray_icon():
 		root.after(0, _trigger)
 	def show_id_now(icon,item):
 		root.after(0, show_session_id)
+	def open_raw_folder(icon,item):
+		try:
+			path = get_app_data_dir() / "simple_data"
+			path.mkdir(parents=True, exist_ok=True)
+			os.startfile(str(path))
+		except Exception as e:
+			_log_event(f"[open_raw_folder] error: {e!r}")
 	def show_version_now(icon,item):
 		root.after(0, show_app_version)
 	# Both toggles pause surveys the same way; Gaming Mode additionally tags
