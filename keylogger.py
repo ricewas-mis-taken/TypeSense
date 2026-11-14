@@ -1,20 +1,36 @@
-import csv, time, uuid, statistics
+import csv, time, uuid, statistics, json
 from pathlib import Path
 from pynput.keyboard import Key, Listener
 import user_send
 import tkinter as tk
+from tkinter import messagebox, simpledialog
 from survey import show_survey, SURVEY_INTERVAL_SEC, show_mode_reminder
 import threading
 import os
 import sys
-import winreg
-import ctypes
+import platform
 import subprocess
-from tkinter import messagebox
-import pystray
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
-import updater
+
+if sys.platform != "darwin":
+	import winreg
+	import ctypes
+	import pystray
+else:
+	import pystray  # still imported so the tray_icon() function parses; guarded before run()
+
+# --- passcode gate ---
+if getattr(sys, "frozen", False):
+	_config_dir = Path(sys.executable).parent
+else:
+	_config_dir = Path(__file__).parent
+_participant_passcode = "password"
+try:
+	_cfg = json.loads((_config_dir / "config.json").read_text())
+	_participant_passcode = _cfg.get("participant_passcode", "password")
+except Exception:
+	pass
 
 
 RELAUNCH_CHECK_INTERVAL_MIN = 20
@@ -40,6 +56,8 @@ def _create_mutex(name):
 	ERROR_ALREADY_EXISTS (another instance holds it, so exit immediately);
 	any other failure can't guarantee single-instance, but exiting here would
 	be worse than just logging and continuing with a second process."""
+	if sys.platform == "darwin":
+		return None
 	kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 	mutex = kernel32.CreateMutexW(None, False, name)
 	if not mutex:
@@ -63,6 +81,32 @@ def _running_packaged():
 
 def ensure_autostart():
 	if not getattr(sys, "frozen", False):
+		return
+	if sys.platform == "darwin":
+		launchd_path = Path.home() / "Library" / "LaunchAgents" / "com.typesense.logger.plist"
+		launchd_path.parent.mkdir(parents=True, exist_ok=True)
+		plist_content = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.typesense.logger</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/TypeSense.app/Contents/MacOS/TypeSense</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/com.typesense.logger.stdout</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/com.typesense.logger.stderr</string>
+</dict>
+</plist>'''
+		launchd_path.write_text(plist_content)
+		subprocess.run(["launchctl", "load", str(launchd_path)], capture_output=True)
 		return
 	if _running_packaged():
 		# AppxManifest.xml's uap5:StartupTask (Enabled="true") handles this
@@ -93,6 +137,8 @@ def ensure_relaunch_task():
 	new attempt exit immediately, so this never produces a second lasting
 	process - it only relaunches the logger after an accidental close, quit,
 	or crash left it not running."""
+	if sys.platform == "darwin":
+		return  # launchd KeepAlive in the plist handles this on macOS
 	if not getattr(sys, "frozen", False):
 		return
 	exe_path = sys.executable
@@ -112,6 +158,24 @@ def ensure_relaunch_task():
 		_log_event(f"[ensure_relaunch_task] schtasks failed ({result.returncode}): {result.stderr.strip()}")
 
 
+def _check_macos_accessibility_permission():
+	if sys.platform != "darwin":
+		return True
+	try:
+		result = subprocess.run(
+			["osascript", "-e", 'tell application "System Events" to get UI elements'],
+			capture_output=True, timeout=2,
+		)
+		if result.returncode == 0:
+			return True
+	except Exception:
+		pass
+	messagebox.showwarning(
+		"Accessibility Permission Required",
+		"TypeSense needs Accessibility permission to capture keystrokes.\n\n"
+		"System Settings → Privacy & Security → Accessibility\n\n"
+		"Add 'TypeSense' and re-launch the app.")
+	return False
 
 
 def categorize(key):
@@ -428,14 +492,19 @@ class Simplekeylog:
 		self.all_flight.clear()
 		self.window_start_ns = now
 
+_session_unlocked = False
+
 def _tray_icon_image():
 	img = Image.new("RGB",(64,64),color=(0,0,0))
 	draw = ImageDraw.Draw(img)
+	locked = not _session_unlocked
 	active = dnd_enabled.is_set() or gaming_enabled.is_set()
-	draw.ellipse([8,8,56,56],fill = (200,40,40) if active else (45,125,70))
+	draw.ellipse([8,8,56,56], fill=(200,40,40) if (locked or active) else (45,125,70))
 	return img
 
 def _tray_title():
+	if not _session_unlocked:
+		return "TypeSense — Locked"
 	modes = []
 	if dnd_enabled.is_set():
 		modes.append("DND")
@@ -465,8 +534,9 @@ def _set_mode(key, enabled):
 	else:
 		_mode_flags[key].clear()
 		_mode_next_reminder_at[key] = None
-	tray_icon.icon = _tray_icon_image()
-	tray_icon.title = _tray_title()
+	if sys.platform != "darwin":
+		tray_icon.icon = _tray_icon_image()
+		tray_icon.title = _tray_title()
 
 def _mode_reminder_poll():
 	now = time.time()
@@ -483,6 +553,28 @@ def _mode_reminder_poll():
 			_mode_next_reminder_at[key] = time.time() + MODE_REMINDER_REPEAT_SEC
 		show_mode_reminder(_mode_labels[key], _on_stop, _on_ignore)
 	root.after(MODE_REMINDER_POLL_MS, _mode_reminder_poll)
+
+def _confirm_passcode_from_tray(icon, item):
+	def _do():
+		global _session_unlocked
+		for attempt in range(3):
+			prompt = (
+				"Enter passcode:"
+				if attempt == 0
+				else f"Wrong passcode. Try again ({attempt + 1}/3):"
+			)
+			val = simpledialog.askstring("TypeSense — Confirm Passcode", prompt, show="*")
+			if val is None:
+				return  # cancelled — stay locked
+			if val == _participant_passcode:
+				_session_unlocked = True
+				user_send.unlock_sending()
+				icon.icon = _tray_icon_image()
+				icon.title = _tray_title()
+				return
+		messagebox.showerror("TypeSense", "Too many incorrect attempts.")
+	root.after(0, _do)
+
 
 def tray_icon():
 	def quit_app(icon,item):
@@ -502,38 +594,46 @@ def tray_icon():
 		try:
 			path = get_app_data_dir() / "simple_data"
 			path.mkdir(parents=True, exist_ok=True)
-			os.startfile(str(path))
+			if sys.platform == "darwin":
+				subprocess.Popen(["open", str(path)])
+			else:
+				os.startfile(str(path))
 		except Exception as e:
 			_log_event(f"[open_raw_folder] error: {e!r}")
 	def show_version_now(icon,item):
 		root.after(0, show_app_version)
-	# Both toggles pause surveys the same way; Gaming Mode additionally tags
-	# logged windows gaming=True so training can exclude gaming typing patterns.
 	def toggle_dnd(icon,item):
 		_set_mode("dnd", not dnd_enabled.is_set())
 	def toggle_gaming(icon,item):
 		_set_mode("gaming", not gaming_enabled.is_set())
 
 	menu = pystray.Menu(
-		pystray.MenuItem("Show ID", show_id_now),
-		pystray.MenuItem("Show Version", show_version_now),
-		pystray.MenuItem("Show Survey Now", show_survey_now),
-		pystray.MenuItem("Do Not Disturb", toggle_dnd, checked=lambda item: dnd_enabled.is_set()),
-		pystray.MenuItem("Gaming Mode", toggle_gaming, checked=lambda item: gaming_enabled.is_set()),
-		pystray.MenuItem("Open Raw Data Folder", open_raw_folder),
-		pystray.MenuItem("Quit Logger", quit_app)
+		pystray.MenuItem("Confirm Password", _confirm_passcode_from_tray,
+		                 visible=lambda item: not _session_unlocked),
+		pystray.MenuItem("Show ID", show_id_now,
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Show Version", show_version_now,
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Show Survey Now", show_survey_now,
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Do Not Disturb", toggle_dnd,
+		                 checked=lambda item: dnd_enabled.is_set(),
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Gaming Mode", toggle_gaming,
+		                 checked=lambda item: gaming_enabled.is_set(),
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Open Raw Data Folder", open_raw_folder,
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Quit Logger", quit_app),
 	)
-	icon = pystray.Icon(
-		"TypeSenseLogger", _tray_icon_image(),
-		"TypeSense - Running",
-		menu
-	)
+	icon = pystray.Icon("TypeSense", _tray_icon_image(), _tray_title(), menu)
 	return icon
 
 root = tk.Tk()
 root.withdraw()
 root.attributes("-alpha", 0)
-root.attributes("-toolwindow", True)
+if sys.platform != "darwin":
+	root.attributes("-toolwindow", True)
 
 try:
 	ensure_autostart()
@@ -543,7 +643,6 @@ try:
 	user_send.init_queue(logger.session_id)
 	user_send._flush_queue()
 	user_send.start_retry_loop()
-	updater.check_for_update_async()
 except Exception as e:
 	error_log = get_app_data_dir() / "startup_error.log"
 	error_log.write_text(f"{time.ctime()}: {e!r}\n", encoding="utf-8")
@@ -552,8 +651,9 @@ except Exception as e:
 		f"TypeSense could not start:\n\n{e}\n\nDetails saved to:\n{error_log}")
 	os._exit(1)
 
-tray_icon = tray_icon()
-threading.Thread(target=tray_icon.run, daemon=True).start()
+if sys.platform != "darwin":
+	tray_icon = tray_icon()
+	threading.Thread(target=tray_icon.run, daemon=True).start()
 
 SURVEY_POLL_MS = 30_000
 # Gates the popup on genuine engagement: enough active windows in the interval
@@ -566,6 +666,8 @@ _last_poll_at = time.time()
 _interval_start_active_windows = logger.active_window_count
 
 def _should_show_survey(now):
+	if not _session_unlocked:
+		return False
 	if dnd_enabled.is_set() or gaming_enabled.is_set():
 		return False
 	active_windows = logger.active_window_count - _interval_start_active_windows
@@ -599,9 +701,7 @@ def survey_poll():
 def show_app_version():
 	root.deiconify()
 	root.focus_force()
-	messagebox.showinfo(
-		"TypeSense Version",
-		f"You are running version: {updater.current_version()}")
+	messagebox.showinfo("TypeSense Version", "TypeSense")
 
 def show_session_id():
 	root.deiconify()
@@ -616,6 +716,8 @@ if logger.is_first_run:
 root.after(SURVEY_POLL_MS, survey_poll)
 root.after(MODE_REMINDER_POLL_MS, _mode_reminder_poll)
 def start_listener():
+	if sys.platform == "darwin" and not _check_macos_accessibility_permission():
+		os._exit(1)
 	while True:
 		try:
 			with Listener(on_press=logger.on_press, on_release=logger.on_release) as listener:
