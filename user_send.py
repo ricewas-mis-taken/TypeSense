@@ -25,6 +25,15 @@ QUEUE_FILE.parent.mkdir(exist_ok=True)
 
 _queue_lock = threading.Lock()
 
+_sending_unlocked = False
+
+def unlock_sending():
+	"""Called by keylogger once the participant enters the correct passcode.
+	From this point on, send() and send_survey() will POST to the server and
+	also flush anything that was queued locally while the app was locked."""
+	global _sending_unlocked
+	_sending_unlocked = True
+
 
 def _log_event(msg):
     """The packaged exe is built --noconsole, so print() output has nowhere to
@@ -68,6 +77,9 @@ def start_retry_loop():
 
 def send(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
+    if not _sending_unlocked:
+        _queue(payload)
+        return
     try:
         _flush_queue()
         r = requests.post(SERVER_URL, json=payload, timeout=5)
@@ -151,6 +163,9 @@ def _flush_queue():
 
 def send_survey(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
+    if not _sending_unlocked:
+        _queue(payload)
+        return
     try:
         r = requests.post(_survey_url(), json=payload, timeout=5)
         if r.status_code != 200:
