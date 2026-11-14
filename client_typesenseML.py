@@ -62,6 +62,23 @@ def _validate_v1(data):
     return f"v1 row missing columns: {missing}" if missing else None
 
 
+def _rotate_if_old_schema(csv_path):
+    """Files already on disk from <2.0.0 clients have the old header; appending
+    new-schema rows would misalign them, so move them aside to *_v1.csv."""
+    if not csv_path.exists():
+        return
+    with open(csv_path, "r", newline="") as f:
+        header = next(csv.reader(f), [])
+    if not header or header == COLUMNS:
+        return
+    target = csv_path.with_name(csv_path.stem + "_v1.csv")
+    n = 1
+    while target.exists():
+        n += 1
+        target = csv_path.with_name(f"{csv_path.stem}_v1_{n}.csv")
+    csv_path.replace(target)
+
+
 @app.route("/data", methods=["POST"])
 def receive_data():
     body = request.get_json()
@@ -91,6 +108,7 @@ def receive_data():
     row = {k: _sanitize_cell(v) for k, v in data.items()}
 
     with _csv_write_lock:
+        _rotate_if_old_schema(csv_path)
         write_header = not csv_path.exists()
         with open(csv_path, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
