@@ -225,8 +225,6 @@ If you don't want to use the packaged `.exe` installer, you can run TypeSense di
 # TypeSense — run-from-Python setup (Windows)
 # Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
 
-Set-ExecutionPolicy Bypass -Scope Process -Force
-
 # Install Python 3.10+ if not present or too old
 $needsPython = $true
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
@@ -244,6 +242,8 @@ if ($needsPython) {
 } else {
     Write-Host "Python $ver found, skipping install."
 }
+
+Set-ExecutionPolicy Bypass -Scope Process -Force
 
 # Install / upgrade dependencies
 Write-Host "Installing dependencies..."
