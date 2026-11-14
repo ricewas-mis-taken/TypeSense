@@ -217,6 +217,56 @@ keystroke-research/
 ```
 
 
+## Running from Python (Windows)
+
+If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python. Paste the block below into an **Administrator PowerShell** opened inside the TypeSense folder.
+
+> **Prerequisites:** Python 3.10+ must be installed and on your PATH. Download from [python.org](https://www.python.org/downloads/) if needed (check "Add Python to PATH" during install).
+
+```powershell
+# TypeSense — run-from-Python setup (Windows)
+# Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
+
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+# Install / upgrade dependencies
+Write-Host "Installing dependencies..."
+python -m pip install --upgrade pip --quiet
+python -m pip install -r requirements.txt --quiet
+Write-Host "Dependencies ready."
+
+# Resolve paths
+$pythonDir  = Split-Path (Get-Command python).Source
+$pythonwExe = Join-Path $pythonDir "pythonw.exe"
+if (-not (Test-Path $pythonwExe)) { $pythonwExe = (Get-Command python).Source }
+$scriptPath = Join-Path $PWD "keylogger.py"
+
+# Register autostart in HKCU so it survives reboots
+$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+Set-ItemProperty -Path $regPath -Name "TypeSenseLogger" -Value "`"$pythonwExe`" `"$scriptPath`""
+Write-Host "Autostart registered for $env:USERNAME."
+
+# Register watchdog scheduled task (relaunches every 20 min if accidentally closed)
+schtasks /Create /F /TN "TypeSenseLoggerWatchdog" /TR "`"$pythonwExe`" `"$scriptPath`"" /SC MINUTE /MO 20 2>$null
+if ($LASTEXITCODE -eq 0) { Write-Host "Watchdog task registered." }
+
+# Launch immediately (windowless background process)
+Start-Process -FilePath $pythonwExe -ArgumentList "`"$scriptPath`"" -WindowStyle Hidden
+Write-Host "TypeSense is running. It will restart automatically on every login."
+```
+
+**What this does:**
+- Installs all Python dependencies from `requirements.txt`
+- Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
+- Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
+- Launches the logger immediately (no console window)
+
+**Tray icon:** starts red and locked. Right-click → **Confirm Password** to unlock it. Once the correct passcode is entered, the icon turns green and all features become available. No data is sent to the server until unlocked.
+
+**To stop / uninstall:** kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor, and delete the TypeSense data folder at `%LOCALAPPDATA%\TypeSense`.
+
+---
+
 ## EMA Survey
 
 Every 20 minutes a popup appears asking:
