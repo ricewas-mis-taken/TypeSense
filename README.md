@@ -25,7 +25,7 @@ abc12345, 1712938400000, press, 0, ""
 abc12345, 1712938400087, release, 0, 87000000
 ```
 
-A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
+This raw log **stays on the participant's PC** — it is never uploaded. Only the computed 15-second feature rows (timing statistics and category rates, no key content) are sent to the server. A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
 
 ---
 
@@ -67,7 +67,7 @@ Participant types normally on their computer
         ↓
 keylogger.py captures timing events (not key content — zero content stored)
         ↓
-Every 15 seconds: compute dwell, flight, pause, burst, correction, and key-category features
+Every 15 seconds: compute 40 timing and key-mix features (dwell, flight, pauses, bursts, rhythm, corrections)
         ↓
 Features sent as JSON to research server via HTTPS
         ↓ (in parallel)
@@ -86,6 +86,24 @@ If the participant loses internet connection, all data is saved locally in an of
 ---
 
 ## Features Computed (Every 15-Second Window)
+
+**Schema v2.0 (app version 2.0.0).** Each uploaded window row has 47 columns: 7 metadata columns (`schema_version`, `session`, `boot_id`, `wall_start_utc`, `ts_ns_start`, `gaming_flag`, `n_keydowns`), the 11 legacy v1 features below (unchanged), and 29 new features computed by `features_v2.py`. All column lists live in `schema.py`. Windows with fewer than 5 keydowns produce no v2 row.
+
+**The 29 new features** (times in ms; a *flight* is the gap between consecutive keydowns inside one window):
+
+| Group | Features |
+|---|---|
+| Core timing | `avg_dwell_raw`, `sd_dwell`, `avg_flight_raw`, `sd_flight`, `cv_flight`, `pause_rate`, `avg_pause`, `backspace_rate`, `enter_rate`, `shift_rate`, `arrow_rate`, `punct_rate`, `keys_per_min` |
+| Timing shape | `median_dwell`, `median_flight`, `p10_flight`, `p90_flight`, `flight_autocorr`, `rollover_rate` |
+| Pauses and bursts | `long_pause_rate`, `max_pause`, `idle_frac`, `burst_count`, `avg_burst_len` |
+| Corrections | `backspace_run_rate` |
+| Key mix | `digit_rate`, `space_rate`, `ctrl_rate`, `alt_rate` |
+
+`avg_dwell_raw` / `avg_flight_raw` are unfiltered means; the legacy `avg_dwell` / `avg_flight` below keep their v1 meaning (10-300 ms filter).
+
+**Boot-proof timestamps.** `perf_counter_ns` restarts every boot, so the logger also writes `anchors_<session>.csv` (`boot_id, perf_ns, wall_utc_ns`) at startup and every 60 s. `align.py` uses it to map raw `ts_ns` values to UTC. Window and survey rows carry `boot_id` and `wall_start_utc`.
+
+**Legacy v1 features (still computed and uploaded):**
 
 | Feature | Description | Why It Matters |
 |---|---|---|
@@ -117,9 +135,9 @@ Missing values (too few samples in a window) are recorded as `-1`.
 * **Modifier keys excluded from flight time** — shift, ctrl, alt, arrow, function keys create artificially short flight times (microseconds) and are filtered out
 * **Dwell time capped at 300ms** — held keys (backspace held to delete, shift held for capitals) are excluded to prevent skewing averages
 * **Burst threshold: 200ms** — gaps longer than 200ms between keypresses mark a burst boundary
-* **Minimum keystroke count per window** — windows with too few keystrokes (fewer than 15) are dropped as low-confidence, since sparse windows produce noisy statistics
+* **Minimum keystroke count per window** — windows with too few keystrokes (fewer than 15 releases, and in v2 fewer than 5 keydowns) are dropped as low-confidence, since sparse windows produce noisy statistics
 * **Suspect/gamed windows filtered at compile time** — `data_comp.py`'s `is_suspect_window()` flags windows with implausible numeric patterns (e.g. suspiciously uniform dwell/flight times) so they're excluded from `training_ALL.csv` by default
-* **Zero key content stored** — every key maps to one of 12 categories (alpha, digit, space, backspace, etc.). The log file cannot reconstruct what anyone typed even if stolen
+* **Zero key content stored** — every key maps to one of 13 categories, codes 0-12 (alpha, digit, space, backspace, etc.). The log file cannot reconstruct what anyone typed even if stolen
 
 ---
 
@@ -163,10 +181,11 @@ Right-click the tray icon for:
 * **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
 * Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot, relaunch, or update) — nothing persists them across process starts
 * If either mode has been left on for 2+ hours, a reminder popup ("You have been in [mode] for more than 2 hours. Stop?") appears on top of everything — Stop turns the mode off, Ignore dismisses it and re-prompts hourly until you do
+* **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log (the folder path is also shown under Show Version)
 * **Quit Logger**
 
 ### Uninstalling
-Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, queued CSVs). Nothing is left behind on the participant's machine.
+Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the rest of the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, offline queue). The one exception is the raw typing log folder `%LOCALAPPDATA%\TypeSense\simple_data`, which is deliberately **kept** so raw data survives an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
 
 ### Auto-Update
 The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
@@ -182,6 +201,10 @@ keystroke-research/
 ├── user_send.py             # Client — server communication + offline queue
 ├── test_offline_queue.py    # Offline queue regression test (local fake server)
 ├── updater.py                # Client — background auto-updater (GitHub Releases)
+├── features_v2.py             # Pure 29-feature extractor for one window (unit-tested)
+├── schema.py                  # Single source of truth for column lists (logger, client, server, data_comp.py)
+├── align.py                   # Anchors file writer + raw ts_ns to UTC mapping
+├── tests/                     # pytest tests for the above
 ├── app_paths.py               # Client — resolves the per-user app data directory
 ├── version.py                  # Compiled-in fallback version (superseded post-install by the tracked version file)
 ├── data_comp.py                 # Offline — joins keystroke windows + surveys, filters suspect windows, builds training_ALL.csv
@@ -193,6 +216,56 @@ keystroke-research/
 └── LICENSE                   # MIT
 ```
 
+
+## Running from Python (Windows)
+
+If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python. Paste the block below into an **Administrator PowerShell** opened inside the TypeSense folder.
+
+> **Prerequisites:** Python 3.10+ must be installed and on your PATH. Download from [python.org](https://www.python.org/downloads/) if needed (check "Add Python to PATH" during install).
+
+```powershell
+# TypeSense — run-from-Python setup (Windows)
+# Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
+
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+# Install / upgrade dependencies
+Write-Host "Installing dependencies..."
+python -m pip install --upgrade pip --quiet
+python -m pip install -r requirements.txt --quiet
+Write-Host "Dependencies ready."
+
+# Resolve paths
+$pythonDir  = Split-Path (Get-Command python).Source
+$pythonwExe = Join-Path $pythonDir "pythonw.exe"
+if (-not (Test-Path $pythonwExe)) { $pythonwExe = (Get-Command python).Source }
+$scriptPath = Join-Path $PWD "keylogger.py"
+
+# Register autostart in HKCU so it survives reboots
+$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+Set-ItemProperty -Path $regPath -Name "TypeSenseLogger" -Value "`"$pythonwExe`" `"$scriptPath`""
+Write-Host "Autostart registered for $env:USERNAME."
+
+# Register watchdog scheduled task (relaunches every 20 min if accidentally closed)
+schtasks /Create /F /TN "TypeSenseLoggerWatchdog" /TR "`"$pythonwExe`" `"$scriptPath`"" /SC MINUTE /MO 20 2>$null
+if ($LASTEXITCODE -eq 0) { Write-Host "Watchdog task registered." }
+
+# Launch immediately (windowless background process)
+Start-Process -FilePath $pythonwExe -ArgumentList "`"$scriptPath`"" -WindowStyle Hidden
+Write-Host "TypeSense is running. It will restart automatically on every login."
+```
+
+**What this does:**
+- Installs all Python dependencies from `requirements.txt`
+- Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
+- Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
+- Launches the logger immediately (no console window)
+
+**Tray icon:** starts red and locked. Right-click → **Confirm Password** to unlock it. Once the correct passcode is entered, the icon turns green and all features become available. No data is sent to the server until unlocked.
+
+**To stop / uninstall:** kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor, and delete the TypeSense data folder at `%LOCALAPPDATA%\TypeSense`.
+
+---
 
 ## EMA Survey
 
@@ -234,6 +307,7 @@ This project builds on and extends:
 ## Ethical Considerations
 
 * Zero key content captured — timing and category only
+* The raw per-event log stays on the participant's PC and is never uploaded; only computed feature rows are
 * Data stored on researcher-controlled server, never third-party cloud
 * Participant IDs are random session UUIDs, not names
 * Participants can withdraw at any time and request data deletion

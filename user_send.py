@@ -17,13 +17,22 @@ if _config_path.exists():
     SERVER_URL = _cfg["server_url"]
     SECRET_TOKEN = _cfg["secret_token"]
 else:
-    SERVER_URL = None
+    SERVER_URL = "https://keystrokes.lucastang.dev/data"
     SECRET_TOKEN = None
 
 QUEUE_FILE = BASE_DIR/"queue"/"offline_queue.jsonl"
 QUEUE_FILE.parent.mkdir(exist_ok=True)
 
 _queue_lock = threading.Lock()
+
+_sending_unlocked = False
+
+def unlock_sending():
+	"""Called by keylogger once the participant enters the correct passcode.
+	From this point on, send() and send_survey() will POST to the server and
+	also flush anything that was queued locally while the app was locked."""
+	global _sending_unlocked
+	_sending_unlocked = True
 
 
 def _log_event(msg):
@@ -68,6 +77,9 @@ def start_retry_loop():
 
 def send(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
+    if not _sending_unlocked:
+        _queue(payload)
+        return
     try:
         _flush_queue()
         r = requests.post(SERVER_URL, json=payload, timeout=5)
@@ -126,6 +138,11 @@ def _flush_queue():
                         url = _survey_url()
                     else:
                         url = SERVER_URL
+                        # A window row queued by the v1 logger has no version tag; mark it
+                        # so the server files it as legacy instead of rejecting it.
+                        if "schema_version" not in data:
+                            data["schema_version"] = "1.x"
+                            payload["data"] = data
                     r = requests.post(url, json=payload, timeout=5)
                     _log_event(f"[FLUSH] response: {r.status_code}")
                     if r.status_code == 200:
@@ -146,6 +163,9 @@ def _flush_queue():
 
 def send_survey(data: dict):
     payload = {"token": SECRET_TOKEN, "data": data}
+    if not _sending_unlocked:
+        _queue(payload)
+        return
     try:
         r = requests.post(_survey_url(), json=payload, timeout=5)
         if r.status_code != 200:

@@ -37,5 +37,11 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags
 Filename: "{cmd}"; Parameters: "/C schtasks /Delete /TN TypeSenseLoggerWatchdog /F"; Flags: runhidden; RunOnceId: "DelWatchdogTask"
 Filename: "{cmd}"; Parameters: "/C reg delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v TypeSenseLogger /f"; Flags: runhidden; RunOnceId: "DelAutostartKey"
 
+; Uninstall removes everything the app created EXCEPT the raw typing logs in
+; {localappdata}\TypeSense\simple_data, so raw data survives an uninstall/reinstall.
+; (To delete it too, remove that folder by hand.) dirifempty tidies up only when nothing is left.
 [UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\TypeSense"
+Type: filesandordirs; Name: "{localappdata}\TypeSense\queue"
+Type: filesandordirs; Name: "{localappdata}\TypeSense\update"
+Type: files; Name: "{localappdata}\TypeSense\*"
+Type: dirifempty; Name: "{localappdata}\TypeSense"

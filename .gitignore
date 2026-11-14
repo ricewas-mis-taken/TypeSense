@@ -24,6 +24,10 @@ server_config.json
 build/
 dist/
 TypeSenseLogger.spec
+TypeSense.spec
+venv/
+mac/
+installer/
 participant_id.txt
 cahnges/
 CLAUDE.md
