@@ -67,7 +67,7 @@ Participant types normally on their computer
         ↓
 keylogger.py captures timing events (not key content — zero content stored)
         ↓
-Every 15 seconds: compute dwell time, flight time, burst length
+Every 15 seconds: compute dwell, flight, pause, burst, correction, and key-category features
         ↓
 Features sent as JSON to research server via HTTPS
         ↓ (in parallel)
@@ -89,18 +89,29 @@ If the participant loses internet connection, all data is saved locally in an of
 
 | Feature | Description | Why It Matters |
 |---|---|---|
-| `avg_dwell_ms` | Mean key hold duration | Rises with fatigue and stress |
-| `min_dwell_ms` | Shortest key hold | Sensitive to modifier key patterns |
-| `max_dwell_ms` | Longest key hold (capped 300ms) | Detects held keys vs normal typing |
-| `avg_flight_ms` | Mean time between keypresses | Primary cognitive load signal |
-| `min_flight_ms` | Fastest key transition | Motor control baseline |
-| `max_flight_ms` | Slowest key transition | Pause detection |
-| `avg_burst_len` | Mean continuous typing run length | Drops under cognitive overload |
+| `avg_dwell` | Mean key hold duration (ms) | Rises with fatigue and stress |
+| `sd_dwell` / `iqr_dwell` | Spread of hold durations | Motor consistency |
+| `median_dwell` | Median key hold | Robust to outlier holds |
+| `shortest_dwell` / `longest_dwell` | Shortest / longest key hold (capped 300ms) | Detects held keys vs normal typing |
+| `avg_flight` | Mean time between keypresses (ms) | Primary cognitive load signal |
+| `sd_flight` / `iqr_flight` / `cv_flight` | Spread and relative variability of flight times | Rhythm stability |
+| `median_flight` | Median time between keypresses | Robust to outlier gaps |
+| `shortest_flight` / `longest_flight` | Fastest / slowest key transition | Motor control baseline, pause detection |
+| `pause_rate` | Share of transitions that are pauses (>200ms) | Hesitation |
+| `avg_pause` / `max_pause` | Mean / longest pause length | Attention breaks |
+| `avg_burst` | Mean continuous typing run length | Drops under cognitive overload |
 | `max_burst` | Longest single burst | Flow state indicator |
 | `num_bursts` | Number of typing bursts per window | Fragmentation of attention |
+| `backspace_rate` | Share of keypresses that are backspace | Error / revision rate |
+| `correction_burst_max` | Longest run of consecutive backspaces | Correction effort |
+| `total_corrections` | Backspace presses in the window | Error volume |
+| `enter_rate` / `shift_rate` / `arrow_rate` / `punct_rate` / `digit_rate` / `space_rate` | Share of keypresses in each key category | Typing style and task mix (category only, never the key itself) |
+| `keys_per_min` | Typing speed over the window | Activity intensity |
 | `total_press` | Cumulative keypresses | Session activity level |
 | `total_release` | Cumulative key releases | Sync check with press count |
 | `gaming` | Whether "Gaming Mode" was active for this window | Lets training exclude gaming-session typing patterns |
+
+Missing values (too few samples in a window) are recorded as `-1`.
 
 ### Key Design Decisions
 * **Modifier keys excluded from flight time** — shift, ctrl, alt, arrow, function keys create artificially short flight times (microseconds) and are filtered out
@@ -131,10 +142,15 @@ keylogger.py                           client_typesenseML.py (Flask)
         └── retry loop (30s)
 ```
 
+### Schema Versions
+* 2.0.0 expanded the per-window feature set (see above). On first run after updating, the client renames the old-format window file to `*_v1.csv` and starts a fresh one with the new header — nothing is overwritten
+* The server does the same for its per-session files, so old and new rows are never mixed in one CSV
+
 ### Offline Resilience
 * Retry loop attempts flush every 30 seconds while running
 * On next startup, queue flushed immediately before new data collection
 * Survey responses and keystroke windows queued separately, routed to correct endpoints on retry
+* A partially successful flush keeps only the unsent entries, in order, and new entries queue safely behind them
 * Data loss is structurally impossible as long as the queue file isn't deleted
 
 ### Tray Icon
@@ -142,6 +158,7 @@ Right-click the tray icon for:
 * **Show ID** — the participant's session UUID (also shown automatically on first run)
 * **Show Version** — the currently installed app version
 * **Show Survey Now** — trigger a mood survey immediately
+* **Open Raw Data Folder** — opens the local folder holding the raw and per-window CSVs
 * **Do Not Disturb** — checkbox toggle; suppresses survey popups only (logging keeps running, `gaming` tag unaffected) — icon turns red while active, green otherwise
 * **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
 * Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot, relaunch, or update) — nothing persists them across process starts
@@ -163,6 +180,7 @@ keystroke-research/
 ├── keylogger.py            # Client — main data collection class, tray icon, entry point
 ├── survey.py                # Client — EMA popup window (tkinter)
 ├── user_send.py             # Client — server communication + offline queue
+├── test_offline_queue.py    # Offline queue regression test (local fake server)
 ├── updater.py                # Client — background auto-updater (GitHub Releases)
 ├── app_paths.py               # Client — resolves the per-user app data directory
 ├── version.py                  # Compiled-in fallback version (superseded post-install by the tracked version file)
@@ -226,7 +244,7 @@ This project builds on and extends:
 ## Author
 
 **Lucas Tang** — Independent researcher, San Diego CA
-Project started 4.11.2026 | V1 complete 5.25.2026
+Project started 4.11.2026 | V1 complete 5.25.2026 | V2 (expanded features) 11.2026
 GitHub: [@ricewas-mis-taken](https://github.com/ricewas-mis-taken)
 
 Implementation assisted by AI tools; research design, study protocol, and analysis choices are the author's own.
