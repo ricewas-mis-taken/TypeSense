@@ -33,14 +33,35 @@ def _sanitize_cell(value):
 
 COLUMNS = [
     "session", "time_now", "total_press", "total_release",
-    "avg_dwell", "shortest_dwell", "longest_dwell",
-    "avg_flight", "shortest_flight", "longest_flight",
-    "avg_burst", "max_burst", "num_bursts", "gaming",
+    "avg_dwell", "sd_dwell", "median_dwell", "iqr_dwell", "shortest_dwell", "longest_dwell",
+    "avg_flight", "sd_flight", "cv_flight", "median_flight", "iqr_flight", "shortest_flight", "longest_flight",
+    "pause_rate", "avg_pause", "max_pause",
+    "avg_burst", "max_burst", "num_bursts",
+    "backspace_rate", "correction_burst_max", "total_corrections",
+    "enter_rate", "shift_rate", "arrow_rate", "punct_rate", "digit_rate", "space_rate",
+    "keys_per_min", "gaming",
     "received_at"
 ]
 
 SURVEY_COLUMNS = ["session", "ts_ns", "stress", "focus",
                   "energy", "activity", "received_at"]
+
+
+def _rotate_if_old_schema(csv_path):
+    """Files already on disk from <2.0.0 clients have the old header; appending
+    new-schema rows would misalign them, so move them aside to *_v1.csv."""
+    if not csv_path.exists():
+        return
+    with open(csv_path, "r", newline="") as f:
+        header = next(csv.reader(f), [])
+    if not header or header == COLUMNS:
+        return
+    target = csv_path.with_name(csv_path.stem + "_v1.csv")
+    n = 1
+    while target.exists():
+        n += 1
+        target = csv_path.with_name(f"{csv_path.stem}_v1_{n}.csv")
+    csv_path.replace(target)
 
 
 @app.route("/data", methods=["POST"])
@@ -61,6 +82,7 @@ def receive_data():
     row = {k: _sanitize_cell(v) for k, v in data.items()}
 
     with _csv_write_lock:
+        _rotate_if_old_schema(csv_path)
         write_header = not csv_path.exists()
         with open(csv_path, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=COLUMNS, extrasaction="ignore")

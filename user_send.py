@@ -79,8 +79,18 @@ def send(data: dict):
 
 def _queue(payload):
     with _queue_lock:
+        # A pre-existing file may lack a trailing newline (older rewrite bug); without
+        # this guard the new entry would glue onto the last line and be unparseable.
+        needs_nl = False
+        try:
+            if QUEUE_FILE.exists() and QUEUE_FILE.stat().st_size:
+                with open(QUEUE_FILE, "rb") as rf:
+                    rf.seek(-1, 2)
+                    needs_nl = rf.read(1) != b"\n"
+        except OSError:
+            pass
         with open(QUEUE_FILE, "a") as f:
-            f.write(json.dumps(payload) + "\n")
+            f.write(("\n" if needs_nl else "") + json.dumps(payload) + "\n")
 
 
 def _flush_queue():
@@ -125,7 +135,7 @@ def _flush_queue():
                     break
             remaining = [l for idx, l in enumerate(lines) if idx not in sent_idx]
             tmp_file = queue_file.with_suffix(".tmp")
-            tmp_file.write_text("\n".join(remaining))
+            tmp_file.write_text("".join(l + "\n" for l in remaining))
             tmp_file.replace(queue_file)
             if not remaining:
                 queue_file.unlink()
