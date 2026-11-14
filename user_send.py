@@ -17,7 +17,7 @@ if _config_path.exists():
     SERVER_URL = _cfg["server_url"]
     SECRET_TOKEN = _cfg["secret_token"]
 else:
-    SERVER_URL = None
+    SERVER_URL = "https://keystrokes.lucastang.dev/data"
     SECRET_TOKEN = None
 
 QUEUE_FILE = BASE_DIR/"queue"/"offline_queue.jsonl"
@@ -126,6 +126,11 @@ def _flush_queue():
                         url = _survey_url()
                     else:
                         url = SERVER_URL
+                        # A window row queued by the v1 logger has no version tag; mark it
+                        # so the server files it as legacy instead of rejecting it.
+                        if "schema_version" not in data:
+                            data["schema_version"] = "1.x"
+                            payload["data"] = data
                     r = requests.post(url, json=payload, timeout=5)
                     _log_event(f"[FLUSH] response: {r.status_code}")
                     if r.status_code == 200:

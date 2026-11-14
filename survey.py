@@ -1,13 +1,17 @@
 import tkinter as tk
 from tkinter import ttk
 import time
-import winsound
+import sys
 import user_send as sender
+import align
+
+if sys.platform != "darwin":
+	import winsound
 
 
 SURVEY_INTERVAL_SEC = 1200
 
-def show_survey(session_id: str):
+def show_survey(session_id: str, boot_id: str = ""):
 	result = {}
 	root = tk.Toplevel()
 	root.title("Quick Check in")
@@ -20,7 +24,8 @@ def show_survey(session_id: str):
 	# -toolwindow hides the minimize/maximize buttons, but Win+Down and the
 	# system menu can still minimize the window - snap it back open the
 	# instant that happens so it truly can't be minimized away.
-	root.attributes("-toolwindow", True)
+	if sys.platform != "darwin":
+		root.attributes("-toolwindow", True)
 
 	def _block_minimize(event=None):
 		if root.state() == "iconic":
@@ -30,7 +35,8 @@ def show_survey(session_id: str):
 	root.bind("<Unmap>", _block_minimize)
 
 	def _deny_close(event=None):
-		winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+		if sys.platform != "darwin":
+			winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
 
 	root.protocol("WM_DELETE_WINDOW", _deny_close)
 	root.bind("<Escape>", _deny_close)
@@ -56,7 +62,10 @@ def show_survey(session_id: str):
 
 	def submit():
 		result["session"] = session_id
-		result["ts_ns"] = time.perf_counter_ns()
+		now_ns = time.perf_counter_ns()
+		result["ts_ns"] = now_ns
+		result["boot_id"] = boot_id
+		result["wall_start_utc"] = align.utc_iso_ms(align.wall_ns_for_perf(now_ns))
 		result["stress"] = sliders["stress"].get()
 		result["focus"] = sliders["focus"].get()
 		result["energy"] = sliders["energy"].get()
@@ -87,7 +96,8 @@ def show_mode_reminder(mode_label: str, on_stop, on_ignore):
 	root.geometry(f"{width}x{height}+{x}+{y}")
 	root.resizable(False, False)
 	root.attributes("-topmost", True)
-	root.attributes("-toolwindow", True)
+	if sys.platform != "darwin":
+		root.attributes("-toolwindow", True)
 
 	def _block_minimize(event=None):
 		if root.state() == "iconic":
