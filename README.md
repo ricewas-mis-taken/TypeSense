@@ -10,7 +10,7 @@ If you don't want to use the packaged `.exe` installer, you can run TypeSense di
 # Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
 
 # Abort unless we're in the project folder (otherwise autostart would point at a missing file)
-if (-not (Test-Path .\keylogger.py) -or -not (Test-Path .equirements.txt)) {
+if (-not (Test-Path .\keylogger.py) -or -not (Test-Path .\requirements.txt)) {
     throw "Run this from the TypeSense folder (keylogger.py / requirements.txt not found in $PWD)."
 }
 
