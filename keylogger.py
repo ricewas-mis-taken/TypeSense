@@ -283,8 +283,16 @@ class Simplekeylog:
 		while target.exists():
 			n += 1
 			target = self.window_file.with_name(f"{self.window_file.stem}_v1_{n}.csv")
-		os.replace(self.window_file, target)
-		_log_event(f"[rotate] old-schema window file moved to {target.name}")
+		try:
+			os.replace(self.window_file, target)
+			_log_event(f"[rotate] old-schema window file moved to {target.name}")
+		except OSError as e:
+			# Another process (e.g. an older logger still running) holds the old file open.
+			# Don't crash startup: write v2 rows to a separate file instead.
+			alt = self.window_file.with_name(self.window_file.stem + "_v2.csv")
+			_log_event(f"[rotate] could not move old window file ({e!r}); using {alt.name}")
+			self.window_file = alt
+			self._rotate_stale_window_file()
 
 	def _load_or_create_session_id(self):
 		id_file = get_app_data_dir() / "participant_id.txt"
