@@ -24,7 +24,7 @@ if (-not $python) {
 }
 if (-not $python) { throw "Could not find or install Python 3.10-3.13." }
 
-foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths.py","align.py","version.py","requirements.txt") {
+foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths.py","align.py","schema.py","features_v2.py","version.py","requirements.txt") {
     Invoke-WebRequest "$raw/$f" -OutFile (Join-Path $dir $f) -UseBasicParsing
 }
 
