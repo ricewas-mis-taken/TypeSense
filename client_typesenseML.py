@@ -120,6 +120,14 @@ def receive_data():
     return jsonify({"status": "ok"}), 200
 
 
+@app.route("/verify", methods=["POST"])
+def verify():
+    body = request.get_json(silent=True)
+    if not body or body.get("token") != SECRET_TOKEN:
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/survey", methods=["POST"])
 def receive_survey():
     body = request.get_json()

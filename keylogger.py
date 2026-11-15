@@ -25,7 +25,7 @@ if getattr(sys, "frozen", False):
 	_config_dir = Path(sys.executable).parent
 else:
 	_config_dir = Path(__file__).parent
-_participant_passcode = "password"
+_participant_passcode = None  # None = no local passcode; the server validates what the participant types
 try:
 	_cfg = json.loads((_config_dir / "config.json").read_text())
 	_participant_passcode = _cfg.get("participant_passcode", "password")
@@ -566,9 +566,16 @@ def _confirm_passcode_from_tray(icon, item):
 			val = simpledialog.askstring("TypeSense — Confirm Passcode", prompt, show="*")
 			if val is None:
 				return  # cancelled — stay locked
-			if val == _participant_passcode:
+			if _participant_passcode is not None:
+				ok = val == _participant_passcode
+			else:
+				ok = user_send.verify_token(val) if val else False
+				if ok is None:
+					messagebox.showerror("TypeSense", "Can't reach the server. Check your connection and try again.")
+					return
+			if ok:
 				_session_unlocked = True
-				user_send.unlock_sending()
+				user_send.unlock_sending(None if _participant_passcode is not None else val)
 				icon.icon = _tray_icon_image()
 				icon.title = _tray_title()
 				return
