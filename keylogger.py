@@ -566,16 +566,16 @@ def _confirm_passcode_from_tray(icon, item):
 			val = simpledialog.askstring("TypeSense — Confirm Passcode", prompt, show="*")
 			if val is None:
 				return  # cancelled — stay locked
-			if _participant_passcode is not None:
-				ok = val == _participant_passcode
-			else:
-				ok = user_send.verify_token(val) if val else False
+			local_ok = _participant_passcode is not None and val == _participant_passcode
+			ok = local_ok
+			if not local_ok and val:
+				ok = user_send.verify_token(val)
 				if ok is None:
 					messagebox.showerror("TypeSense", "Can't reach the server. Check your connection and try again.")
 					return
 			if ok:
 				_session_unlocked = True
-				user_send.unlock_sending(None if _participant_passcode is not None else val)
+				user_send.unlock_sending(None if local_ok else val)
 				icon.icon = _tray_icon_image()
 				icon.title = _tray_title()
 				return
