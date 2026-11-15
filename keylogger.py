@@ -12,6 +12,9 @@ import platform
 import subprocess
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
+import align
+import schema
+import features_v2
 
 if sys.platform != "darwin":
 	import winreg
@@ -200,16 +203,7 @@ def categorize(key):
 # to trust - both for the CSV row and for counting the window as "active" below.
 MIN_KEYSTROKES_PER_WINDOW = 15
 
-WINDOW_COLUMNS = [
-	"session", "time_now", "total_press", "total_release",
-	"avg_dwell", "sd_dwell", "median_dwell", "iqr_dwell", "shortest_dwell", "longest_dwell",
-	"avg_flight", "sd_flight", "cv_flight", "median_flight", "iqr_flight", "shortest_flight", "longest_flight",
-	"pause_rate", "avg_pause", "max_pause",
-	"avg_burst", "max_burst", "num_bursts",
-	"backspace_rate", "correction_burst_max", "total_corrections",
-	"enter_rate", "shift_rate", "arrow_rate", "punct_rate", "digit_rate", "space_rate",
-	"keys_per_min", "gaming",
-]
+WINDOW_COLUMNS = schema.WINDOW_COLUMNS
 
 class Simplekeylog:
 	def __init__(self, out_dir = None, window_sec = 15):
@@ -236,6 +230,11 @@ class Simplekeylog:
 		if ff_is_new:
 			self._ff.writerow(WINDOW_COLUMNS)
 
+		self.boot_id = uuid.uuid4().hex[:8]
+		self.anchor_file = self.out_dir / f"anchors_{self.session_id}.csv"
+		align.write_anchor(self.anchor_file, self.boot_id)
+		threading.Thread(target=self._anchor_loop, daemon=True).start()
+
 		self.events = []
 		self.all_dwell = []
 		self.all_flight = []
@@ -254,6 +253,14 @@ class Simplekeylog:
 
 		self.active_window_count = 0
 		self.last_keystroke_ts = None
+
+	def _anchor_loop(self):
+		while True:
+			time.sleep(align.ANCHOR_INTERVAL_SEC)
+			try:
+				align.write_anchor(self.anchor_file, self.boot_id)
+			except Exception as e:
+				_log_event(f"[anchor] error: {e!r}")
 
 	def _rotate_stale_window_file(self):
 		"""The window CSV schema changed in 2.0.0. Appending new-schema rows to an
@@ -401,11 +408,25 @@ class Simplekeylog:
 			"keys_per_min": keys_per_min,
 			"gaming": gaming_enabled.is_set(),
 		}
-		assert list(row) == WINDOW_COLUMNS
+		feats = features_v2.compute_window_features(self.events, self.window_start_ns)
+		if feats is None:
+			return False
+		meta = {
+			"schema_version": schema.SCHEMA_VERSION,
+			"session": self.session_id,
+			"boot_id": self.boot_id,
+			"wall_start_utc": align.utc_iso_ms(align.wall_ns_for_perf(self.window_start_ns)),
+			"ts_ns_start": self.window_start_ns,
+			"gaming_flag": gaming_enabled.is_set(),
+			"n_keydowns": n_press,
+		}
+		legacy = {k: row[k] for k in schema.LEGACY_FEATURE_COLS}
+		out = schema.make_window_row(meta, legacy, feats)
 
-		self._ff.writerow(list(row.values()))
+		self._ff.writerow([out[c] for c in WINDOW_COLUMNS])
 		self._ff_file.flush()
-		threading.Thread(target=user_send.send, args=(row,), daemon=True).start()
+		threading.Thread(target=user_send.send, args=(out,), daemon=True).start()
+		return True
 
 
 
@@ -431,7 +452,7 @@ class Simplekeylog:
 			self._last_press_ns = now
 
 
-		self.events.append(("press", now, cat))
+		self.events.append(("press", now, cat, -1))
 		self._kw.writerow([self.session_id, now, "press", cat, ""])
 		self.last_keystroke_ts = time.time()
 
@@ -452,11 +473,11 @@ class Simplekeylog:
 	def _on_release(self, key):
 		now = time.perf_counter_ns()
 		cat = categorize(key)
-		self.events.append(("release", now, cat))
 		self.total_release += 1
 
 		press_time = self._press_times.pop(key, None)
 		dwell_ns = now - press_time if press_time is not None else -1
+		self.events.append(("release", now, cat, dwell_ns))
 		self.all_dwell.append(dwell_ns)
 
 		self._kw.writerow([self.session_id, now, "release", cat, dwell_ns])
@@ -481,8 +502,8 @@ class Simplekeylog:
 		if len(self.all_dwell) < MIN_KEYSTROKES_PER_WINDOW:
 			print(f"Window skipped - only {len(self.all_dwell)} keystrokes")
 		else:
-			self._write_window_row(now)
-			self.active_window_count += 1
+			if self._write_window_row(now):
+				self.active_window_count += 1
 
 		self.window_press = 0
 		self.window_release = 0
@@ -591,7 +612,7 @@ def tray_icon():
 	def show_survey_now(icon,item):
 		def _trigger():
 			global _next_survey_at, _interval_start_active_windows
-			show_survey(logger.session_id)
+			show_survey(logger.session_id, logger.boot_id)
 			_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 			_interval_start_active_windows = logger.active_window_count
 		root.after(0, _trigger)
@@ -700,7 +721,7 @@ def survey_poll():
 		_interval_start_active_windows = logger.active_window_count
 	elif now >= _next_survey_at:
 		if _should_show_survey(now):
-			show_survey(logger.session_id)
+			show_survey(logger.session_id, logger.boot_id)
 		_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 		_interval_start_active_windows = logger.active_window_count
 	root.after(SURVEY_POLL_MS, survey_poll)
