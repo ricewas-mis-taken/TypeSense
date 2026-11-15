@@ -1,7 +1,7 @@
-# TypeSense - participant setup: downloads the client into %LOCALAPPDATA%\TypeSense\app, installs deps, registers autostart, launches.
+# TypeSense - participant setup: downloads the client into %LOCALAPPDATA%\Programs\TypeSense, installs deps, registers autostart, launches.
 $ErrorActionPreference = "Stop"
 $raw = "https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main"
-$dir = Join-Path $env:LOCALAPPDATA "TypeSense\app"
+$dir = Join-Path $env:LOCALAPPDATA "Programs\TypeSense"
 New-Item -ItemType Directory -Force $dir | Out-Null
 
 $ver = $null
@@ -16,10 +16,10 @@ foreach ($f in "keylogger.py","survey.py","user_send.py","updater.py","app_paths
     Invoke-WebRequest "$raw/$f" -OutFile (Join-Path $dir $f) -UseBasicParsing
 }
 
-if (Test-Path .\config.json) { Copy-Item .\config.json (Join-Path $dir "config.json") -Force }
-if (-not (Test-Path (Join-Path $dir "config.json"))) {
-    throw "config.json (from Lucas) not found. Put it in $dir or the folder you ran this from, then run this again."
-}
+$cfg = Join-Path $dir "config.json"
+if ($env:TS_CONFIG) { [IO.File]::WriteAllBytes($cfg, [Convert]::FromBase64String($env:TS_CONFIG)) }
+elseif (Test-Path .\config.json) { Copy-Item .\config.json $cfg -Force }
+if (-not (Test-Path $cfg)) { throw "No config. Use the full command Lucas sent you (it sets TS_CONFIG)." }
 
 python -m pip install --upgrade pip --quiet
 python -m pip install -r (Join-Path $dir "requirements.txt") --quiet
