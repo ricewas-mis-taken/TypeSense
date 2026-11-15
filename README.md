@@ -3,16 +3,16 @@
 
 ## Running from Python (Windows)
 
-If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python on a clean machine, from any folder, with one command. Lucas sends each participant the command with their config included (the config holds a secret, so it is never in this repo):
+If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python on a clean machine, from any folder, with one command:
 
 ```powershell
-$env:TS_CONFIG='<base64 of config.json>'; irm https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main/setup.ps1 | iex
+irm https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main/setup.ps1 | iex
 ```
 
-To generate `<base64 of config.json>`: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("config.json"))`
+The tray icon starts locked. Right-click it and choose **Confirm Password**, then enter the passcode Lucas gave you. The server checks it, and nothing is sent until it is accepted.
 
 **What this does:**
-- Downloads the client files into `%LOCALAPPDATA%\Programs\TypeSense` (same location as the installer) and writes `config.json` from `TS_CONFIG`; data lives in `%LOCALAPPDATA%\TypeSense` as usual
+- Downloads the client files into `%LOCALAPPDATA%\Programs\TypeSense` (same location as the installer); data lives in `%LOCALAPPDATA%\TypeSense` as usual
 - Installs Python 3.11 via `winget` if Python 3.10-3.13 is not already on the machine
 - Installs all Python dependencies from `requirements.txt`
 - Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
