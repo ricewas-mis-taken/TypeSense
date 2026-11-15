@@ -171,6 +171,42 @@ Uninstalling via Windows' "Apps & Features" removes the installed program files 
 ### Auto-Update
 The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
 
+### Running From Python (Windows)
+Open PowerShell **as Administrator**, `cd` into the TypeSense folder (the one containing `keylogger.py`), then paste:
+
+```powershell
+# Abort unless we're in the project folder
+if (-not (Test-Path .\keylogger.py) -or -not (Test-Path .\requirements.txt)) {
+    throw "Run this from the TypeSense folder (keylogger.py and requirements.txt not found in $PWD)."
+}
+
+# Need Python 3.10-3.13 (newer builds may lack wheels for the dependencies)
+$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+$ver = if ($pythonCmd) { & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null }
+if (-not $ver -or [version]$ver -lt [version]"3.10" -or [version]$ver -ge [version]"3.14") {
+    winget install Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
+    $env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [Environment]::GetEnvironmentVariable("Path","User")
+}
+
+Set-ExecutionPolicy Bypass -Scope Process -Force
+python -m pip install --upgrade pip --quiet
+python -m pip install -r requirements.txt --quiet
+if ($LASTEXITCODE -ne 0) { throw "Dependency install failed - nothing was registered." }
+
+$pythonwExe = Join-Path (Split-Path (Get-Command python).Source) "pythonw.exe"
+if (-not (Test-Path $pythonwExe)) { $pythonwExe = (Get-Command python).Source }
+$scriptPath = Join-Path $PWD "keylogger.py"
+
+# Autostart + watchdog (relaunches every 20 min if closed)
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TypeSenseLogger" -Value "`"$pythonwExe`" `"$scriptPath`""
+schtasks /Create /F /TN "TypeSenseLoggerWatchdog" /TR "`"$pythonwExe`" `"$scriptPath`"" /SC MINUTE /MO 20 | Out-Null
+
+Start-Process -FilePath $pythonwExe -ArgumentList "`"$scriptPath`"" -WindowStyle Hidden
+Write-Host "TypeSense is running and will restart on every login."
+```
+
+This replaces any autostart/watchdog entries from the installed exe. To switch back, relaunch the installed `TypeSenseLogger.exe`; it re-registers itself.
+
 ---
 
 ## File Structure
