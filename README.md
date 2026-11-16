@@ -206,6 +206,9 @@ Right-click the tray icon for:
 * **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log (the folder path is also shown under Show Version)
 * **Quit Logger**
 
+### Silent-Participant Alert (researcher side)
+`monitor_stale.py` checks the server's data folders and shows a popup when a machine has sent no keystroke windows for 2 days. It alerts once per outage and re-arms when data resumes; the first run only records a baseline. Run it from a scheduled task in your own login session, e.g. `schtasks /Create /SC HOURLY /MO 6 /TN TypeSenseStaleCheck /TR "pythonw C:\path	o\monitor_stale.py"`.
+
 ### Uninstalling
 Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the downloaded updater installer. The data folder `%LOCALAPPDATA%\TypeSense` (session ID, raw and window logs, unsent offline queue, saved unlock) is deliberately **kept**, so data and identity survive an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
 

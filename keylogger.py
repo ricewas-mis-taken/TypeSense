@@ -625,6 +625,11 @@ def _confirm_passcode_from_tray(icon, item):
 				_save_unlock(None if local_ok else val)
 				icon.icon = _tray_icon_image()
 				icon.title = _tray_title()
+				icon.update_menu()
+				try:
+					icon.notify("Unlocked. Right-click the tray icon for all options.", "TypeSense")
+				except Exception:
+					pass
 				return
 		messagebox.showerror("TypeSense", "Too many incorrect attempts.")
 	root.after(0, _do)
@@ -760,9 +765,25 @@ def show_app_version():
 def show_session_id():
 	root.deiconify()
 	root.focus_force()
-	messagebox.showinfo(
-		"Your Participant ID",
-		f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
+	win = tk.Toplevel(root)
+	win.title("Your Participant ID")
+	win.attributes("-topmost", True)
+	win.resizable(False, False)
+	tk.Label(win, text="Your ID is:", font=("Segoe UI", 10)).pack(padx=24, pady=(18, 2))
+	tk.Label(win, text=logger.session_id, font=("Consolas", 16, "bold")).pack(padx=24)
+	tk.Label(win, text="Please send this to Lucas.", font=("Segoe UI", 9)).pack(padx=24, pady=(6, 10))
+	btns = tk.Frame(win)
+	btns.pack(pady=(0, 16))
+	copy_btn = tk.Button(btns, text="Copy", width=10)
+	def _copy():
+		root.clipboard_clear()
+		root.clipboard_append(logger.session_id)
+		root.update()
+		copy_btn.config(text="Copied!")
+		win.after(1500, lambda: copy_btn.winfo_exists() and copy_btn.config(text="Copy"))
+	copy_btn.config(command=_copy)
+	copy_btn.pack(side="left", padx=6)
+	tk.Button(btns, text="Close", width=10, command=win.destroy).pack(side="left", padx=6)
 
 if logger.is_first_run:
 	root.after(1000, show_session_id)

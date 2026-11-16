@@ -34,3 +34,6 @@ CLAUDE.md
 architecture_notes.txt
 microsoft/msix/testcert/
 backups/
+
+monitor_state.json
+alerts.log
