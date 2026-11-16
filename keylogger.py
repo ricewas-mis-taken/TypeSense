@@ -625,6 +625,11 @@ def _confirm_passcode_from_tray(icon, item):
 				_save_unlock(None if local_ok else val)
 				icon.icon = _tray_icon_image()
 				icon.title = _tray_title()
+				icon.update_menu()
+				try:
+					icon.notify("Unlocked. Right-click the tray icon for all options.", "TypeSense")
+				except Exception:
+					pass
 				return
 		messagebox.showerror("TypeSense", "Too many incorrect attempts.")
 	root.after(0, _do)
