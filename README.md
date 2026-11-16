@@ -207,7 +207,7 @@ Right-click the tray icon for:
 * **Quit Logger**
 
 ### Uninstalling
-Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the rest of the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, offline queue). The one exception is the raw typing log folder `%LOCALAPPDATA%\TypeSense\simple_data`, which is deliberately **kept** so raw data survives an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
+Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the downloaded updater installer. The data folder `%LOCALAPPDATA%\TypeSense` (session ID, raw and window logs, unsent offline queue, saved unlock) is deliberately **kept**, so data and identity survive an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
 
 ### Auto-Update
 The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
