@@ -513,7 +513,24 @@ class Simplekeylog:
 		self.all_flight.clear()
 		self.window_start_ns = now
 
-_session_unlocked = False
+_UNLOCK_FILE = get_app_data_dir() / "unlocked.json"
+
+def _load_unlock():
+	"""Unlock once, stay unlocked: a successful passcode is remembered on this PC."""
+	try:
+		d = json.loads(_UNLOCK_FILE.read_text(encoding="utf-8"))
+	except Exception:
+		return False
+	user_send.unlock_sending(d.get("token") or None)
+	return True
+
+def _save_unlock(token):
+	try:
+		_UNLOCK_FILE.write_text(json.dumps({"token": token}), encoding="utf-8")
+	except Exception as e:
+		_log_event(f"[unlock] could not remember unlock: {e!r}")
+
+_session_unlocked = _load_unlock()
 
 def _tray_icon_image():
 	img = Image.new("RGB",(64,64),color=(0,0,0))
@@ -597,6 +614,7 @@ def _confirm_passcode_from_tray(icon, item):
 			if ok:
 				_session_unlocked = True
 				user_send.unlock_sending(None if local_ok else val)
+				_save_unlock(None if local_ok else val)
 				icon.icon = _tray_icon_image()
 				icon.title = _tray_title()
 				return
