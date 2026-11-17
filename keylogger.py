@@ -65,11 +65,71 @@ def _create_mutex(name):
 	mutex = kernel32.CreateMutexW(None, False, name)
 	if not mutex:
 		_log_event(f"[_create_mutex] CreateMutexW failed, error={ctypes.get_last_error()}")
-	elif ctypes.get_last_error() == 183:
+	elif ctypes.get_last_error() in (183, 5):  # already exists / held by an elevated instance
 		os._exit(0)
 	return mutex
 
 
+def _ver_tuple(v):
+	import re
+	return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3])
+
+
+def _pid_is_typesense(pid):
+	"""True if pid is a live python/TypeSenseLogger process (guards against pid reuse)."""
+	import ctypes
+	from ctypes import wintypes
+	k = ctypes.WinDLL("kernel32", use_last_error=True)
+	h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+	if not h:
+		return False
+	try:
+		code = wintypes.DWORD()
+		if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != 259:  # STILL_ACTIVE
+			return False
+		buf = ctypes.create_unicode_buffer(1024)
+		size = wintypes.DWORD(1024)
+		if not k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+			return False
+		name = buf.value.lower()
+		return "python" in name or "typesenselogger" in name
+	finally:
+		k.CloseHandle(h)
+
+
+def _claim_single_instance():
+	"""Only the newest logger may run: a newer version replaces an older running one,
+	an equal or older version exits. Uses a pid/version file because the named mutex
+	can't be opened across elevation levels (that's how two loggers got started)."""
+	if sys.platform != "win32":
+		return
+	try:
+		from version import __version__ as my_version
+		inst = get_app_data_dir() / "instance.json"
+		try:
+			d = json.loads(inst.read_text(encoding="utf-8"))
+			pid, theirs = int(d["pid"]), d.get("version", "0")
+		except Exception:
+			pid, theirs = None, None
+		if pid and pid != os.getpid() and _pid_is_typesense(pid):
+			if _ver_tuple(my_version) <= _ver_tuple(theirs):
+				_log_event(f"[instance] v{theirs} (pid {pid}) already running; v{my_version} exiting")
+				os._exit(0)
+			_log_event(f"[instance] replacing older v{theirs} (pid {pid}) with v{my_version}")
+			subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+			for _ in range(20):
+				if not _pid_is_typesense(pid):
+					break
+				time.sleep(0.25)
+			else:
+				_log_event(f"[instance] could not stop pid {pid}; exiting")
+				os._exit(0)
+		inst.write_text(json.dumps({"pid": os.getpid(), "version": my_version}), encoding="utf-8")
+	except Exception as e:
+		_log_event(f"[instance] check failed: {e!r}")
+
+
+_claim_single_instance()
 _single_instance_mutex = _create_mutex("Global\\TypeSenseLogger_SingleInstance_Mutex")
 
 
