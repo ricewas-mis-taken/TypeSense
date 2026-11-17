@@ -201,19 +201,16 @@ Right-click the tray icon for:
 * **Open Raw Data Folder** — opens the local folder holding the raw and per-window CSVs
 * **Do Not Disturb** — checkbox toggle; suppresses survey popups only (logging keeps running, `gaming` tag unaffected) — icon turns red while active, green otherwise
 * **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
-* Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot, relaunch, or update) — nothing persists them across process starts
+* Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot or relaunch) — nothing persists them across process starts
 * If either mode has been left on for 2+ hours, a reminder popup ("You have been in [mode] for more than 2 hours. Stop?") appears on top of everything — Stop turns the mode off, Ignore dismisses it and re-prompts hourly until you do
 * **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log (the folder path is also shown under Show Version)
 * **Quit Logger**
 
 ### Silent-Participant Alert (researcher side)
-`monitor_stale.py` checks the server's data folders and shows a popup when a machine has sent no keystroke windows for 2 days. It alerts once per outage and re-arms when data resumes; the first run only records a baseline. Run it from a scheduled task in your own login session, e.g. `schtasks /Create /SC HOURLY /MO 6 /TN TypeSenseStaleCheck /TR "pythonw C:\path	o\monitor_stale.py"`.
+`monitor_stale.py` checks the server's data folders and shows a popup when a machine has sent no keystroke windows for 2 days. It alerts once per outage and re-arms when data resumes; the first run only records a baseline. Run it from a scheduled task in your own login session, e.g. `schtasks /Create /SC HOURLY /MO 6 /TN TypeSenseStaleCheck /TR "pythonw C:\path\to\monitor_stale.py"`.
 
 ### Uninstalling
-Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the downloaded updater installer. The data folder `%LOCALAPPDATA%\TypeSense` (session ID, raw and window logs, unsent offline queue, saved unlock) is deliberately **kept**, so data and identity survive an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
-
-### Auto-Update
-The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
+Uninstalling via Windows' "Apps & Features" works for the packaged installer only. It removes the installed program files and the per-user autostart registry entry and the `TypeSenseLoggerWatchdog` relaunch scheduled task. If TypeSense was set up with the Python `setup.ps1` path, it has no Apps & Features entry; use the manual steps under "Running from Python" instead. The data folder `%LOCALAPPDATA%\TypeSense` (session ID, raw and window logs, unsent offline queue, saved unlock) is deliberately **kept**, so data and identity survive an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
 
 ---
 
