@@ -22,17 +22,18 @@ def last_seen():
                 with open(f, newline="", encoding="utf-8", errors="ignore") as fh:
                     rows = csv.reader(fh)
                     header = next(rows, [])
-                    if "received_at" not in header:
+                    if "received_at" not in header or "session" not in header:
                         continue
                     i = header.index("received_at")
+                    si = header.index("session")  # v2 rows start with schema_version, not session
                     for r in rows:
-                        if len(r) > i and r[i][:2] == "20":
+                        if len(r) > max(i, si) and r[i][:2] == "20":
                             try:
                                 t = datetime.fromisoformat(r[i])
                             except ValueError:
                                 continue
-                            if r[0] not in seen or t > seen[r[0]]:
-                                seen[r[0]] = t
+                            if r[si] not in seen or t > seen[r[si]]:
+                                seen[r[si]] = t
             except OSError:
                 continue
     return seen
