@@ -660,9 +660,18 @@ def _mode_reminder_poll():
 		show_mode_reminder(_mode_labels[key], _on_stop, _on_ignore)
 	root.after(MODE_REMINDER_POLL_MS, _mode_reminder_poll)
 
+def _read_passcode_from_config():
+	"""Read the passcode fresh from config.json so changes take effect without a restart."""
+	try:
+		cfg = json.loads((_config_dir / "config.json").read_text())
+		return cfg.get("participant_passcode") or _participant_passcode
+	except Exception:
+		return _participant_passcode
+
 def _confirm_passcode_from_tray(icon, item):
 	def _do():
 		global _session_unlocked
+		current_passcode = _read_passcode_from_config()
 		for attempt in range(3):
 			prompt = (
 				"Enter passcode:"
@@ -672,7 +681,7 @@ def _confirm_passcode_from_tray(icon, item):
 			val = simpledialog.askstring("TypeSense — Confirm Passcode", prompt, show="*")
 			if val is None:
 				return  # cancelled — stay locked
-			local_ok = _participant_passcode is not None and val == _participant_passcode
+			local_ok = current_passcode is not None and val == current_passcode
 			ok = local_ok
 			if not local_ok and val:
 				ok = user_send.verify_token(val)
@@ -794,8 +803,7 @@ def tray_icon():
 		                 visible=lambda item: _session_unlocked),
 		pystray.MenuItem("Open Raw Data Folder", open_raw_folder,
 		                 visible=lambda item: _session_unlocked),
-		pystray.MenuItem("Uninstall Logger", uninstall_logger,
-		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Uninstall Logger", uninstall_logger),
 		pystray.MenuItem("Quit Logger", quit_app),
 	)
 	icon = pystray.Icon("TypeSense", _tray_icon_image(), _tray_title(), menu)
