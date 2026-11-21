@@ -8,8 +8,12 @@ def get_app_data_dir() -> Path:
 
 	On Windows, uses AppData\Local which is guaranteed writable by the owning user.
 	On macOS, uses ~/Library/Application Support which is the standard location.
+	TYPESENSE_DATA_DIR overrides both (used in tests for isolation).
 	"""
-	if sys.platform == "darwin":
+	override = os.environ.get("TYPESENSE_DATA_DIR")
+	if override:
+		data_dir = Path(override)
+	elif sys.platform == "darwin":
 		data_dir = Path.home() / "Library" / "Application Support" / "TypeSense"
 	else:
 		base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or str(Path.home())

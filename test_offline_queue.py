@@ -1,10 +1,11 @@
 import os, sys, json, tempfile, threading, shutil
 from http.server import BaseHTTPRequestHandler, HTTPServer
 tmp = tempfile.mkdtemp()
-os.environ["LOCALAPPDATA"] = tmp
+os.environ["TYPESENSE_DATA_DIR"] = tmp  # cross-platform test isolation
 SRC = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SRC)
 import user_send as u
+u.unlock_sending()  # simulate a passcode-unlocked session
 got = []; mode = {"fail": True, "fail_after": None}
 class H(BaseHTTPRequestHandler):
     def do_POST(s):

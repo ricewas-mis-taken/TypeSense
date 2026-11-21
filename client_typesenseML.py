@@ -108,7 +108,8 @@ def receive_data():
     row = {k: _sanitize_cell(v) for k, v in data.items()}
 
     with _csv_write_lock:
-        _rotate_if_old_schema(csv_path)
+        if out_dir == DATA_DIR:
+            _rotate_if_old_schema(csv_path)
         write_header = not csv_path.exists()
         with open(csv_path, "a", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
