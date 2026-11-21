@@ -581,6 +581,57 @@ def tray_icon():
 		icon.stop()
 		logger.shutdown()
 		os._exit(0)
+	def uninstall_logger(icon, item):
+		def _do():
+			root.deiconify()
+			root.focus_force()
+			if not messagebox.askyesno(
+				"Uninstall TypeSense",
+				"Are you sure you want to uninstall TypeSense?\n\n"
+				"This will permanently remove the logger from autostart so it never runs again.",
+				icon="warning",
+			):
+				root.withdraw()
+				return
+			if not messagebox.askyesno(
+				"Uninstall TypeSense — Final Confirmation",
+				"This cannot be undone.\n\n"
+				"Click Yes again to permanently uninstall TypeSense.\n\n"
+				"(Your raw data folder will NOT be deleted.)",
+				icon="warning",
+			):
+				root.withdraw()
+				return
+			try:
+				if sys.platform == "darwin":
+					launchd_path = Path.home() / "Library" / "LaunchAgents" / "com.typesense.logger.plist"
+					subprocess.run(["launchctl", "unload", str(launchd_path)], capture_output=True)
+					if launchd_path.exists():
+						launchd_path.unlink()
+				else:
+					run_key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+					try:
+						key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, run_key, 0, winreg.KEY_ALL_ACCESS)
+						winreg.DeleteValue(key, "TypeSenseLogger")
+						winreg.CloseKey(key)
+					except FileNotFoundError:
+						pass
+					subprocess.run(
+						["schtasks", "/Delete", "/TN", RELAUNCH_TASK_NAME, "/F"],
+						creationflags=subprocess.CREATE_NO_WINDOW,
+						capture_output=True,
+					)
+			except Exception as e:
+				_log_event(f"[uninstall] cleanup error: {e!r}")
+			messagebox.showinfo(
+				"TypeSense Uninstalled",
+				"TypeSense has been uninstalled and will not restart.\n\n"
+				"Your raw data folder has been kept.\n\nThe logger will now close.",
+			)
+			icon.stop()
+			logger.shutdown()
+			os._exit(0)
+		root.after(0, _do)
 	def show_survey_now(icon,item):
 		def _trigger():
 			global _next_survey_at, _interval_start_active_windows
@@ -623,6 +674,8 @@ def tray_icon():
 		                 checked=lambda item: gaming_enabled.is_set(),
 		                 visible=lambda item: _session_unlocked),
 		pystray.MenuItem("Open Raw Data Folder", open_raw_folder,
+		                 visible=lambda item: _session_unlocked),
+		pystray.MenuItem("Uninstall Logger", uninstall_logger,
 		                 visible=lambda item: _session_unlocked),
 		pystray.MenuItem("Quit Logger", quit_app),
 	)

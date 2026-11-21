@@ -64,7 +64,7 @@ Write-Host "TypeSense is running. It will restart automatically on every login."
 
 **Tray icon:** starts red and locked. Right-click → **Confirm Password** to unlock it. Once the correct passcode is entered, the icon turns green and all features become available. No data is sent to the server until unlocked.
 
-**To stop / uninstall:** kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor, and delete the TypeSense data folder at `%LOCALAPPDATA%\TypeSense`.
+**To stop / uninstall:** unlock the tray icon (right-click → **Confirm Password**), then right-click again → **Uninstall Logger** and confirm twice. This removes the autostart registry entry and watchdog task so the logger never runs again. Your raw data folder is kept. Alternatively, do it manually: kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, and remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor.
 
 ---
 
@@ -215,9 +215,7 @@ keylogger.py                           client_typesenseML.py (Flask)
   ├── captures keystrokes              ├── POST /data
   ├── computes 15s windows             │     └── data/[session].csv
   ├── shows 20min survey popup         └── POST /survey
-  ├── tray icon (ID / survey / DND / Gaming)  └── surveys/[session].csv
-  ├── updater.py — checks GitHub Releases
-  │     every 5 min, silently self-updates
+  ├── tray icon (ID / survey / DND / Gaming / Uninstall)  └── surveys/[session].csv
   └── user_send.py
         ├── send()        ──HTTPS──►
         ├── send_survey() ──HTTPS──►
@@ -244,16 +242,14 @@ Right-click the tray icon for:
 * **Open Raw Data Folder** — opens the local folder holding the raw and per-window CSVs
 * **Do Not Disturb** — checkbox toggle; suppresses survey popups only (logging keeps running, `gaming` tag unaffected) — icon turns red while active, green otherwise
 * **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
-* Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot, relaunch, or update) — nothing persists them across process starts
+* Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot or relaunch) — nothing persists them across process starts
 * If either mode has been left on for 2+ hours, a reminder popup ("You have been in [mode] for more than 2 hours. Stop?") appears on top of everything — Stop turns the mode off, Ignore dismisses it and re-prompts hourly until you do
-* **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log (the folder path is also shown under Show Version)
+* **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log
+* **Uninstall Logger** — removes the autostart entry and watchdog task so the logger never runs again (requires two confirmations); raw data folder is kept
 * **Quit Logger**
 
 ### Uninstalling
-Uninstalling via Windows' "Apps & Features" removes the installed program files and also cleans up everything else the app creates outside of that folder: the per-user autostart registry entry, the `TypeSenseLoggerWatchdog` relaunch scheduled task, and the rest of the local data directory (`%LOCALAPPDATA%\TypeSense` — session ID, logs, offline queue). The one exception is the raw typing log folder `%LOCALAPPDATA%\TypeSense\simple_data`, which is deliberately **kept** so raw data survives an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
-
-### Auto-Update
-The packaged exe polls GitHub Releases every 5 minutes for a newer version, downloads the installer silently, and relaunches — no participant action required. The installed version is tracked in a small local file (not baked into the exe), so it stays accurate across in-place updates.
+Right-click the tray icon → **Confirm Password** to unlock it, then right-click → **Uninstall Logger** and confirm twice. This removes the per-user autostart registry entry and the `TypeSenseLoggerWatchdog` scheduled task so the logger will never relaunch. The raw typing data folder (`%LOCALAPPDATA%\TypeSense\simple_data` on Windows, `~/Library/Application Support/TypeSense/simple_data` on macOS) is deliberately **kept**; delete it by hand if you want it gone.
 
 ---
 
@@ -265,7 +261,6 @@ keystroke-research/
 ├── survey.py                # Client — EMA popup window (tkinter)
 ├── user_send.py             # Client — server communication + offline queue
 ├── test_offline_queue.py    # Offline queue regression test (local fake server)
-├── updater.py                # Client — background auto-updater (GitHub Releases)
 ├── features_v2.py             # Pure 29-feature extractor for one window (unit-tested)
 ├── schema.py                  # Single source of truth for column lists (logger, client, server, data_comp.py)
 ├── align.py                   # Anchors file writer + raw ts_ns to UTC mapping
@@ -274,7 +269,7 @@ keystroke-research/
 ├── version.py                  # Compiled-in fallback version (superseded post-install by the tracked version file)
 ├── data_comp.py                 # Offline — joins keystroke windows + surveys, filters suspect windows, builds training_ALL.csv
 ├── client_typesenseML.py    # Server — Flask app with /data and /survey routes
-├── config.json               # Client — server URL, secret token, GitHub token (gitignored, not in repo)
+├── config.json               # Client — server URL, secret token, participant passcode (gitignored, not in repo)
 ├── build.bat                  # Builds the exe via PyInstaller (dist/TypeSenseLogger/)
 ├── TypeSenseLogger.iss         # Inno Setup script — builds installer/TypeSenseSetup.exe
 ├── .gitignore                # Excludes all data files, venv, cache, ML pipeline
