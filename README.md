@@ -1,30 +1,6 @@
 # TypeSense
 ### Passive Desktop Typing Dynamics for Real-Time Mood and Cognitive State Prediction
 
-## Running from Python (Windows)
-
-If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python on a clean machine, from any folder, with one command:
-
-```powershell
-irm https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main/setup.ps1 | iex
-```
-
-The tray icon starts locked. Right-click it and choose **Confirm Password**, then enter the passcode Lucas gave you. The server checks it, and nothing is sent until it is accepted.
-
-**What this does:**
-- Downloads the client files into `%LOCALAPPDATA%\Programs\TypeSense` (same location as the installer); data lives in `%LOCALAPPDATA%\TypeSense` as usual
-- Installs Python 3.11 via `winget` if Python 3.10-3.13 is not already on the machine
-- Installs all Python dependencies from `requirements.txt`
-- Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
-- Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
-- Launches the logger immediately (no console window)
-
-**Tray icon:** starts red and locked. Right-click → **Confirm Password** to unlock it. Once the correct passcode is entered, the icon turns green and all features become available. No data is sent to the server until unlocked.
-
-**To stop / uninstall:** kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor, and delete the TypeSense data folder at `%LOCALAPPDATA%\TypeSense`.
-
----
-
 ## DISCLAIMER
 
 **THIS LOGGER CAPTURES ZERO CONTENT.** Every key is mapped to a category number::
@@ -48,6 +24,30 @@ abc12345, 1712938400087, release, 0, 87000000
 ```
 
 This raw log **stays on the participant's PC** — it is never uploaded. Only the computed 15-second feature rows (timing statistics and category rates, no key content) are sent to the server. A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
+
+---
+
+## Running from Python (Windows)
+
+If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python on a clean machine, from any folder, with one command:
+
+```powershell
+irm https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main/setup.ps1 | iex
+```
+
+The tray icon starts locked. Right-click it and choose **Confirm Password**, then enter the passcode Lucas gave you. The server checks it, and nothing is sent until it is accepted.
+
+**What this does:**
+- Downloads the client files into `%LOCALAPPDATA%\Programs\TypeSense` (same location as the installer); data lives in `%LOCALAPPDATA%\TypeSense` as usual
+- Installs Python 3.11 via `winget` if Python 3.10-3.13 is not already on the machine
+- Installs all Python dependencies from `requirements.txt`
+- Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
+- Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
+- Launches the logger immediately (no console window)
+
+**Tray icon:** starts red and locked. Right-click → **Confirm Password** to unlock it. Once the correct passcode is entered, the icon turns green and all features become available. No data is sent to the server until unlocked.
+
+**To stop / uninstall:** unlock the tray icon (right-click → **Confirm Password**), then right-click again → **Uninstall Logger** and confirm twice. This removes the autostart registry entry and watchdog task so the logger never runs again. Your raw data folder is kept. Alternatively, do it manually: kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, and remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor.
 
 ---
 
@@ -172,9 +172,7 @@ keylogger.py                           client_typesenseML.py (Flask)
   ├── captures keystrokes              ├── POST /data
   ├── computes 15s windows             │     └── data/[session].csv
   ├── shows 20min survey popup         └── POST /survey
-  ├── tray icon (ID / survey / DND / Gaming)  └── surveys/[session].csv
-  ├── updater.py — checks GitHub Releases
-  │     every 5 min, silently self-updates
+  ├── tray icon (ID / survey / DND / Gaming / Uninstall)  └── surveys/[session].csv
   └── user_send.py
         ├── send()        ──HTTPS──►
         ├── send_survey() ──HTTPS──►
@@ -203,14 +201,15 @@ Right-click the tray icon for:
 * **Gaming Mode** — checkbox toggle; suppresses survey popups and tags logged windows `gaming=True` — icon turns red while active, green otherwise
 * Both DND and Gaming Mode are in-memory flags: they pause surveys until toggled back off, and always reset to off on restart (reboot or relaunch) — nothing persists them across process starts
 * If either mode has been left on for 2+ hours, a reminder popup ("You have been in [mode] for more than 2 hours. Stop?") appears on top of everything — Stop turns the mode off, Ignore dismisses it and re-prompts hourly until you do
-* **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log (the folder path is also shown under Show Version)
+* **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log
+* **Uninstall Logger** — removes the autostart entry and watchdog task so the logger never runs again (requires two confirmations); raw data folder is kept
 * **Quit Logger**
 
 ### Silent-Participant Alert (researcher side)
 `monitor_stale.py` checks the server's data folders and shows a popup when a machine has sent no keystroke windows for 2 days. It alerts once per outage and re-arms when data resumes; the first run only records a baseline. Run it from a scheduled task in your own login session, e.g. `schtasks /Create /SC HOURLY /MO 6 /TN TypeSenseStaleCheck /TR "pythonw C:\path\to\monitor_stale.py"`.
 
 ### Uninstalling
-Uninstalling via Windows' "Apps & Features" works for the packaged installer only. It removes the installed program files and the per-user autostart registry entry and the `TypeSenseLoggerWatchdog` relaunch scheduled task. If TypeSense was set up with the Python `setup.ps1` path, it has no Apps & Features entry; use the manual steps under "Running from Python" instead. The data folder `%LOCALAPPDATA%\TypeSense` (session ID, raw and window logs, unsent offline queue, saved unlock) is deliberately **kept**, so data and identity survive an uninstall or reinstall; a participant who wants it gone can delete that folder by hand.
+Right-click the tray icon → **Confirm Password** to unlock it, then right-click → **Uninstall Logger** and confirm twice. This removes the per-user autostart registry entry and the `TypeSenseLoggerWatchdog` scheduled task so the logger will never relaunch. The raw typing data folder (`%LOCALAPPDATA%\TypeSense\simple_data` on Windows, `~/Library/Application Support/TypeSense/simple_data` on macOS) is deliberately **kept**; delete it by hand if you want it gone.
 
 ---
 
@@ -222,7 +221,6 @@ keystroke-research/
 ├── survey.py                # Client — EMA popup window (tkinter)
 ├── user_send.py             # Client — server communication + offline queue
 ├── test_offline_queue.py    # Offline queue regression test (local fake server)
-├── updater.py                # Client — background auto-updater (GitHub Releases)
 ├── features_v2.py             # Pure 29-feature extractor for one window (unit-tested)
 ├── schema.py                  # Single source of truth for column lists (logger, client, server, data_comp.py)
 ├── align.py                   # Anchors file writer + raw ts_ns to UTC mapping
@@ -231,7 +229,7 @@ keystroke-research/
 ├── version.py                  # Compiled-in fallback version (superseded post-install by the tracked version file)
 ├── data_comp.py                 # Offline — joins keystroke windows + surveys, filters suspect windows, builds training_ALL.csv
 ├── client_typesenseML.py    # Server — Flask app with /data and /survey routes
-├── config.json               # Client — server URL, secret token, GitHub token (gitignored, not in repo)
+├── config.json               # Client — server URL, secret token, participant passcode (gitignored, not in repo)
 ├── build.bat                  # Builds the exe via PyInstaller (dist/TypeSenseLogger/)
 ├── TypeSenseLogger.iss         # Inno Setup script — builds installer/TypeSenseSetup.exe
 ├── .gitignore                # Excludes all data files, venv, cache, ML pipeline

@@ -117,6 +117,8 @@ def _queue(payload):
 
 
 def _flush_queue():
+    if not _sending_unlocked:
+        return
     with _queue_lock:
         queue_dir = BASE_DIR/"queue"
         if not queue_dir.exists():
