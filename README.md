@@ -1,6 +1,32 @@
 # TypeSense
 ### Passive Desktop Typing Dynamics for Real-Time Mood and Cognitive State Prediction
 
+## DISCLAIMER
+
+**THIS LOGGER CAPTURES ZERO CONTENT.** Every key is mapped to a category number::
+
+```
+0 = alpha (a-z)        6 = ctrl
+1 = digit (0-9)        7 = alt
+2 = space              8 = arrow keys
+3 = backspace          9 = function keys
+4 = enter             10 = escape
+5 = shift             11 = other
+                      12 = punctuation
+```
+
+The raw log file contains rows like:
+
+```
+session, timestamp_ns, event, category, dwell_ns
+abc12345, 1712938400000, press, 0, ""
+abc12345, 1712938400087, release, 0, 87000000
+```
+
+This raw log **stays on the participant's PC** — it is never uploaded. Only the computed 15-second feature rows (timing statistics and category rates, no key content) are sent to the server. A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
+
+---
+
 ## Running from Python (Windows)
 
 If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python. Paste the block below into an **Administrator PowerShell** opened inside the TypeSense folder. Python will be installed automatically if it isn't already.
@@ -65,32 +91,6 @@ Write-Host "TypeSense is running. It will restart automatically on every login."
 **Tray icon:** starts red and locked. Right-click → **Confirm Password** to unlock it. Once the correct passcode is entered, the icon turns green and all features become available. No data is sent to the server until unlocked.
 
 **To stop / uninstall:** unlock the tray icon (right-click → **Confirm Password**), then right-click again → **Uninstall Logger** and confirm twice. This removes the autostart registry entry and watchdog task so the logger never runs again. Your raw data folder is kept. Alternatively, do it manually: kill the `pythonw.exe` process in Task Manager, run `schtasks /Delete /TN TypeSenseLoggerWatchdog /F` in a terminal, and remove the `TypeSenseLogger` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` in Registry Editor.
-
----
-
-## DISCLAIMER
-
-**THIS LOGGER CAPTURES ZERO CONTENT.** Every key is mapped to a category number::
-
-```
-0 = alpha (a-z)        6 = ctrl
-1 = digit (0-9)        7 = alt
-2 = space              8 = arrow keys
-3 = backspace          9 = function keys
-4 = enter             10 = escape
-5 = shift             11 = other
-                      12 = punctuation
-```
-
-The raw log file contains rows like:
-
-```
-session, timestamp_ns, event, category, dwell_ns
-abc12345, 1712938400000, press, 0, ""
-abc12345, 1712938400087, release, 0, 87000000
-```
-
-This raw log **stays on the participant's PC** — it is never uploaded. Only the computed 15-second feature rows (timing statistics and category rates, no key content) are sent to the server. A stolen log file tells you "an alpha key was pressed and held for 87ms." It does not tell you which key. Passwords, messages, and private text are structurally protected.
 
 ---
 
