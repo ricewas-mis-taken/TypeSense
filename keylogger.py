@@ -12,6 +12,9 @@ import platform
 import subprocess
 from PIL import Image, ImageDraw
 from app_paths import get_app_data_dir
+import align
+import schema
+import features_v2
 
 if sys.platform != "darwin":
 	import winreg
@@ -25,7 +28,7 @@ if getattr(sys, "frozen", False):
 	_config_dir = Path(sys.executable).parent
 else:
 	_config_dir = Path(__file__).parent
-_participant_passcode = "password"
+_participant_passcode = None  # None = no local passcode; the server validates what the participant types
 try:
 	_cfg = json.loads((_config_dir / "config.json").read_text())
 	_participant_passcode = _cfg.get("participant_passcode", "password")
@@ -62,11 +65,71 @@ def _create_mutex(name):
 	mutex = kernel32.CreateMutexW(None, False, name)
 	if not mutex:
 		_log_event(f"[_create_mutex] CreateMutexW failed, error={ctypes.get_last_error()}")
-	elif ctypes.get_last_error() == 183:
+	elif ctypes.get_last_error() in (183, 5):  # already exists / held by an elevated instance
 		os._exit(0)
 	return mutex
 
 
+def _ver_tuple(v):
+	import re
+	return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3])
+
+
+def _pid_is_typesense(pid):
+	"""True if pid is a live python/TypeSenseLogger process (guards against pid reuse)."""
+	import ctypes
+	from ctypes import wintypes
+	k = ctypes.WinDLL("kernel32", use_last_error=True)
+	h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+	if not h:
+		return False
+	try:
+		code = wintypes.DWORD()
+		if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != 259:  # STILL_ACTIVE
+			return False
+		buf = ctypes.create_unicode_buffer(1024)
+		size = wintypes.DWORD(1024)
+		if not k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+			return False
+		name = buf.value.lower()
+		return "python" in name or "typesenselogger" in name
+	finally:
+		k.CloseHandle(h)
+
+
+def _claim_single_instance():
+	"""Only the newest logger may run: a newer version replaces an older running one,
+	an equal or older version exits. Uses a pid/version file because the named mutex
+	can't be opened across elevation levels (that's how two loggers got started)."""
+	if sys.platform != "win32":
+		return
+	try:
+		from version import __version__ as my_version
+		inst = get_app_data_dir() / "instance.json"
+		try:
+			d = json.loads(inst.read_text(encoding="utf-8"))
+			pid, theirs = int(d["pid"]), d.get("version", "0")
+		except Exception:
+			pid, theirs = None, None
+		if pid and pid != os.getpid() and _pid_is_typesense(pid):
+			if _ver_tuple(my_version) <= _ver_tuple(theirs):
+				_log_event(f"[instance] v{theirs} (pid {pid}) already running; v{my_version} exiting")
+				os._exit(0)
+			_log_event(f"[instance] replacing older v{theirs} (pid {pid}) with v{my_version}")
+			subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+			for _ in range(20):
+				if not _pid_is_typesense(pid):
+					break
+				time.sleep(0.25)
+			else:
+				_log_event(f"[instance] could not stop pid {pid}; exiting")
+				os._exit(0)
+		inst.write_text(json.dumps({"pid": os.getpid(), "version": my_version}), encoding="utf-8")
+	except Exception as e:
+		_log_event(f"[instance] check failed: {e!r}")
+
+
+_claim_single_instance()
 _single_instance_mutex = _create_mutex("Global\\TypeSenseLogger_SingleInstance_Mutex")
 
 
@@ -200,16 +263,7 @@ def categorize(key):
 # to trust - both for the CSV row and for counting the window as "active" below.
 MIN_KEYSTROKES_PER_WINDOW = 15
 
-WINDOW_COLUMNS = [
-	"session", "time_now", "total_press", "total_release",
-	"avg_dwell", "sd_dwell", "median_dwell", "iqr_dwell", "shortest_dwell", "longest_dwell",
-	"avg_flight", "sd_flight", "cv_flight", "median_flight", "iqr_flight", "shortest_flight", "longest_flight",
-	"pause_rate", "avg_pause", "max_pause",
-	"avg_burst", "max_burst", "num_bursts",
-	"backspace_rate", "correction_burst_max", "total_corrections",
-	"enter_rate", "shift_rate", "arrow_rate", "punct_rate", "digit_rate", "space_rate",
-	"keys_per_min", "gaming",
-]
+WINDOW_COLUMNS = schema.WINDOW_COLUMNS
 
 class Simplekeylog:
 	def __init__(self, out_dir = None, window_sec = 15):
@@ -236,6 +290,11 @@ class Simplekeylog:
 		if ff_is_new:
 			self._ff.writerow(WINDOW_COLUMNS)
 
+		self.boot_id = uuid.uuid4().hex[:8]
+		self.anchor_file = self.out_dir / f"anchors_{self.session_id}.csv"
+		align.write_anchor(self.anchor_file, self.boot_id)
+		threading.Thread(target=self._anchor_loop, daemon=True).start()
+
 		self.events = []
 		self.all_dwell = []
 		self.all_flight = []
@@ -254,6 +313,14 @@ class Simplekeylog:
 
 		self.active_window_count = 0
 		self.last_keystroke_ts = None
+
+	def _anchor_loop(self):
+		while True:
+			time.sleep(align.ANCHOR_INTERVAL_SEC)
+			try:
+				align.write_anchor(self.anchor_file, self.boot_id)
+			except Exception as e:
+				_log_event(f"[anchor] error: {e!r}")
 
 	def _rotate_stale_window_file(self):
 		"""The window CSV schema changed in 2.0.0. Appending new-schema rows to an
@@ -276,8 +343,16 @@ class Simplekeylog:
 		while target.exists():
 			n += 1
 			target = self.window_file.with_name(f"{self.window_file.stem}_v1_{n}.csv")
-		os.replace(self.window_file, target)
-		_log_event(f"[rotate] old-schema window file moved to {target.name}")
+		try:
+			os.replace(self.window_file, target)
+			_log_event(f"[rotate] old-schema window file moved to {target.name}")
+		except OSError as e:
+			# Another process (e.g. an older logger still running) holds the old file open.
+			# Don't crash startup: write v2 rows to a separate file instead.
+			alt = self.window_file.with_name(self.window_file.stem + "_v2.csv")
+			_log_event(f"[rotate] could not move old window file ({e!r}); using {alt.name}")
+			self.window_file = alt
+			self._rotate_stale_window_file()
 
 	def _load_or_create_session_id(self):
 		id_file = get_app_data_dir() / "participant_id.txt"
@@ -401,11 +476,25 @@ class Simplekeylog:
 			"keys_per_min": keys_per_min,
 			"gaming": gaming_enabled.is_set(),
 		}
-		assert list(row) == WINDOW_COLUMNS
+		feats = features_v2.compute_window_features(self.events, self.window_start_ns)
+		if feats is None:
+			return False
+		meta = {
+			"schema_version": schema.SCHEMA_VERSION,
+			"session": self.session_id,
+			"boot_id": self.boot_id,
+			"wall_start_utc": align.utc_iso_ms(align.wall_ns_for_perf(self.window_start_ns)),
+			"ts_ns_start": self.window_start_ns,
+			"gaming_flag": gaming_enabled.is_set(),
+			"n_keydowns": n_press,
+		}
+		legacy = {k: row[k] for k in schema.LEGACY_FEATURE_COLS}
+		out = schema.make_window_row(meta, legacy, feats)
 
-		self._ff.writerow(list(row.values()))
+		self._ff.writerow([out[c] for c in WINDOW_COLUMNS])
 		self._ff_file.flush()
-		threading.Thread(target=user_send.send, args=(row,), daemon=True).start()
+		threading.Thread(target=user_send.send, args=(out,), daemon=True).start()
+		return True
 
 
 
@@ -431,7 +520,7 @@ class Simplekeylog:
 			self._last_press_ns = now
 
 
-		self.events.append(("press", now, cat))
+		self.events.append(("press", now, cat, -1))
 		self._kw.writerow([self.session_id, now, "press", cat, ""])
 		self.last_keystroke_ts = time.time()
 
@@ -452,11 +541,11 @@ class Simplekeylog:
 	def _on_release(self, key):
 		now = time.perf_counter_ns()
 		cat = categorize(key)
-		self.events.append(("release", now, cat))
 		self.total_release += 1
 
 		press_time = self._press_times.pop(key, None)
 		dwell_ns = now - press_time if press_time is not None else -1
+		self.events.append(("release", now, cat, dwell_ns))
 		self.all_dwell.append(dwell_ns)
 
 		self._kw.writerow([self.session_id, now, "release", cat, dwell_ns])
@@ -481,8 +570,8 @@ class Simplekeylog:
 		if len(self.all_dwell) < MIN_KEYSTROKES_PER_WINDOW:
 			print(f"Window skipped - only {len(self.all_dwell)} keystrokes")
 		else:
-			self._write_window_row(now)
-			self.active_window_count += 1
+			if self._write_window_row(now):
+				self.active_window_count += 1
 
 		self.window_press = 0
 		self.window_release = 0
@@ -492,7 +581,24 @@ class Simplekeylog:
 		self.all_flight.clear()
 		self.window_start_ns = now
 
-_session_unlocked = False
+_UNLOCK_FILE = get_app_data_dir() / "unlocked.json"
+
+def _load_unlock():
+	"""Unlock once, stay unlocked: a successful passcode is remembered on this PC."""
+	try:
+		d = json.loads(_UNLOCK_FILE.read_text(encoding="utf-8"))
+	except Exception:
+		return False
+	user_send.unlock_sending(d.get("token") or None)
+	return True
+
+def _save_unlock(token):
+	try:
+		_UNLOCK_FILE.write_text(json.dumps({"token": token}), encoding="utf-8")
+	except Exception as e:
+		_log_event(f"[unlock] could not remember unlock: {e!r}")
+
+_session_unlocked = _load_unlock()
 
 def _tray_icon_image():
 	img = Image.new("RGB",(64,64),color=(0,0,0))
@@ -566,11 +672,24 @@ def _confirm_passcode_from_tray(icon, item):
 			val = simpledialog.askstring("TypeSense — Confirm Passcode", prompt, show="*")
 			if val is None:
 				return  # cancelled — stay locked
-			if val == _participant_passcode:
+			local_ok = _participant_passcode is not None and val == _participant_passcode
+			ok = local_ok
+			if not local_ok and val:
+				ok = user_send.verify_token(val)
+				if ok is None:
+					messagebox.showerror("TypeSense", "Can't reach the server. Check your connection and try again.")
+					return
+			if ok:
 				_session_unlocked = True
-				user_send.unlock_sending()
+				user_send.unlock_sending(None if local_ok else val)
+				_save_unlock(None if local_ok else val)
 				icon.icon = _tray_icon_image()
 				icon.title = _tray_title()
+				icon.update_menu()
+				try:
+					icon.notify("Unlocked. Right-click the tray icon for all options.", "TypeSense")
+				except Exception:
+					pass
 				return
 		messagebox.showerror("TypeSense", "Too many incorrect attempts.")
 	root.after(0, _do)
@@ -635,7 +754,7 @@ def tray_icon():
 	def show_survey_now(icon,item):
 		def _trigger():
 			global _next_survey_at, _interval_start_active_windows
-			show_survey(logger.session_id)
+			show_survey(logger.session_id, logger.boot_id)
 			_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 			_interval_start_active_windows = logger.active_window_count
 		root.after(0, _trigger)
@@ -746,7 +865,7 @@ def survey_poll():
 		_interval_start_active_windows = logger.active_window_count
 	elif now >= _next_survey_at:
 		if _should_show_survey(now):
-			show_survey(logger.session_id)
+			show_survey(logger.session_id, logger.boot_id)
 		_next_survey_at = time.time() + SURVEY_INTERVAL_SEC
 		_interval_start_active_windows = logger.active_window_count
 	root.after(SURVEY_POLL_MS, survey_poll)
@@ -759,9 +878,24 @@ def show_app_version():
 def show_session_id():
 	root.deiconify()
 	root.focus_force()
-	messagebox.showinfo(
-		"Your Participant ID",
-		f"Your ID is: {logger.session_id}\n\nPlease send this to Lucas.")
+	win = tk.Toplevel(root)
+	win.title("Your Participant ID")
+	win.attributes("-topmost", True)
+	win.resizable(False, False)
+	tk.Label(win, text="Your ID is:", font=("Segoe UI", 10)).pack(padx=24, pady=(18, 2))
+	tk.Label(win, text=logger.session_id, font=("Consolas", 16, "bold")).pack(padx=24)
+	status = tk.Label(win, text="Please send this to Lucas.", font=("Segoe UI", 9))
+	status.pack(padx=24, pady=(6, 10))
+	btns = tk.Frame(win)
+	btns.pack(pady=(0, 16))
+	def _copy():
+		root.clipboard_clear()
+		root.clipboard_append(f"TypeSense ID — ID: {logger.session_id}")
+		root.update()
+		status.config(text="Copied to clipboard ✓")
+		win.after(1500, lambda: status.winfo_exists() and status.config(text="Send to Lucas"))
+	tk.Button(btns, text="Copy", width=10, command=_copy).pack(side="left", padx=6)
+	tk.Button(btns, text="Close", width=10, command=win.destroy).pack(side="left", padx=6)
 
 if logger.is_first_run:
 	root.after(1000, show_session_id)

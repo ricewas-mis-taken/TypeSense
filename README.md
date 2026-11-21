@@ -29,60 +29,17 @@ This raw log **stays on the participant's PC** — it is never uploaded. Only th
 
 ## Running from Python (Windows)
 
-If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python. Paste the block below into an **Administrator PowerShell** opened inside the TypeSense folder. Python will be installed automatically if it isn't already.
+If you don't want to use the packaged `.exe` installer, you can run TypeSense directly from Python on a clean machine, from any folder, with one command:
 
 ```powershell
-# TypeSense — run-from-Python setup (Windows)
-# Open Administrator PowerShell in the TypeSense folder, then paste this whole block.
-
-# Install Python 3.10+ if not present or too old
-$needsPython = $true
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if ($pythonCmd) {
-    $ver = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-    if ($ver -and [version]$ver -ge [version]"3.10") { $needsPython = $false }
-}
-if ($needsPython) {
-    Write-Host "Installing Python 3.11..."
-    winget install Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
-    # Reload PATH so python is available in this session
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("Path","User")
-    Write-Host "Python installed."
-} else {
-    Write-Host "Python $ver found, skipping install."
-}
-
-Set-ExecutionPolicy Bypass -Scope Process -Force
-
-# Install / upgrade dependencies
-Write-Host "Installing dependencies..."
-python -m pip install --upgrade pip --quiet
-python -m pip install -r requirements.txt --quiet
-Write-Host "Dependencies ready."
-
-# Resolve paths
-$pythonDir  = Split-Path (Get-Command python).Source
-$pythonwExe = Join-Path $pythonDir "pythonw.exe"
-if (-not (Test-Path $pythonwExe)) { $pythonwExe = (Get-Command python).Source }
-$scriptPath = Join-Path $PWD "keylogger.py"
-
-# Register autostart in HKCU so it survives reboots
-$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-Set-ItemProperty -Path $regPath -Name "TypeSenseLogger" -Value "`"$pythonwExe`" `"$scriptPath`""
-Write-Host "Autostart registered for $env:USERNAME."
-
-# Register watchdog scheduled task (relaunches every 20 min if accidentally closed)
-schtasks /Create /F /TN "TypeSenseLoggerWatchdog" /TR "`"$pythonwExe`" `"$scriptPath`"" /SC MINUTE /MO 20 2>$null
-if ($LASTEXITCODE -eq 0) { Write-Host "Watchdog task registered." }
-
-# Launch immediately (windowless background process)
-Start-Process -FilePath $pythonwExe -ArgumentList "`"$scriptPath`"" -WindowStyle Hidden
-Write-Host "TypeSense is running. It will restart automatically on every login."
+irm https://raw.githubusercontent.com/ricewas-mis-taken/TypeSense/main/setup.ps1 | iex
 ```
 
+The tray icon starts locked. Right-click it and choose **Confirm Password**, then enter the passcode Lucas gave you. The server checks it, and nothing is sent until it is accepted.
+
 **What this does:**
-- Installs Python 3.11 via `winget` if Python 3.10+ is not already on the machine
+- Downloads the client files into `%LOCALAPPDATA%\Programs\TypeSense` (same location as the installer); data lives in `%LOCALAPPDATA%\TypeSense` as usual
+- Installs Python 3.11 via `winget` if Python 3.10-3.13 is not already on the machine
 - Installs all Python dependencies from `requirements.txt`
 - Registers `pythonw keylogger.py` in the user's `Run` registry key so the logger auto-starts on every login
 - Registers a scheduled task watchdog that relaunches the logger every 20 minutes if it was closed
@@ -247,6 +204,9 @@ Right-click the tray icon for:
 * **Open Raw Data Folder** — opens File Explorer on the local folder holding the raw `keyrecsimp_*.csv` log
 * **Uninstall Logger** — removes the autostart entry and watchdog task so the logger never runs again (requires two confirmations); raw data folder is kept
 * **Quit Logger**
+
+### Silent-Participant Alert (researcher side)
+`monitor_stale.py` checks the server's data folders and shows a popup when a machine has sent no keystroke windows for 2 days. It alerts once per outage and re-arms when data resumes; the first run only records a baseline. Run it from a scheduled task in your own login session, e.g. `schtasks /Create /SC HOURLY /MO 6 /TN TypeSenseStaleCheck /TR "pythonw C:\path\to\monitor_stale.py"`.
 
 ### Uninstalling
 Right-click the tray icon → **Confirm Password** to unlock it, then right-click → **Uninstall Logger** and confirm twice. This removes the per-user autostart registry entry and the `TypeSenseLoggerWatchdog` scheduled task so the logger will never relaunch. The raw typing data folder (`%LOCALAPPDATA%\TypeSense\simple_data` on Windows, `~/Library/Application Support/TypeSense/simple_data` on macOS) is deliberately **kept**; delete it by hand if you want it gone.

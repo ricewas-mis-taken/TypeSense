@@ -27,11 +27,22 @@ _queue_lock = threading.Lock()
 
 _sending_unlocked = False
 
-def unlock_sending():
+def verify_token(token):
+    """True/False if the server accepts the token, None if it can't be reached."""
+    url = SERVER_URL[: -len("/data")] + "/verify" if SERVER_URL.endswith("/data") else SERVER_URL
+    try:
+        return requests.post(url, json={"token": token}, timeout=8).status_code == 200
+    except requests.exceptions.RequestException:
+        return None
+
+
+def unlock_sending(token=None):
 	"""Called by keylogger once the participant enters the correct passcode.
 	From this point on, send() and send_survey() will POST to the server and
 	also flush anything that was queued locally while the app was locked."""
-	global _sending_unlocked
+	global _sending_unlocked, SECRET_TOKEN
+	if token:
+		SECRET_TOKEN = token
 	_sending_unlocked = True
 
 
@@ -145,6 +156,7 @@ def _flush_queue():
                         if "schema_version" not in data:
                             data["schema_version"] = "1.x"
                             payload["data"] = data
+                    payload["token"] = SECRET_TOKEN
                     r = requests.post(url, json=payload, timeout=5)
                     _log_event(f"[FLUSH] response: {r.status_code}")
                     if r.status_code == 200:

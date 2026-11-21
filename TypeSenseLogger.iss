@@ -37,11 +37,8 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName} now"; Flags
 Filename: "{cmd}"; Parameters: "/C schtasks /Delete /TN TypeSenseLoggerWatchdog /F"; Flags: runhidden; RunOnceId: "DelWatchdogTask"
 Filename: "{cmd}"; Parameters: "/C reg delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v TypeSenseLogger /f"; Flags: runhidden; RunOnceId: "DelAutostartKey"
 
-; Uninstall removes everything the app created EXCEPT the raw typing logs in
-; {localappdata}\TypeSense\simple_data, so raw data survives an uninstall/reinstall.
-; (To delete it too, remove that folder by hand.) dirifempty tidies up only when nothing is left.
+; Uninstall keeps the whole {localappdata}\TypeSense data folder (participant ID, logs,
+; unsent queue, saved unlock), so data and identity survive an uninstall/reinstall.
+; Only the downloaded updater installer is removed. To delete the data too, remove that folder by hand.
 [UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\TypeSense\queue"
 Type: filesandordirs; Name: "{localappdata}\TypeSense\update"
-Type: files; Name: "{localappdata}\TypeSense\*"
-Type: dirifempty; Name: "{localappdata}\TypeSense"
